@@ -1,0 +1,48 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+build/
+dist/
+.ipynb_checkpoints/
+
+# --- Virtual envs ---
+.venv/
+venv/
+env/
+env.bak/
+
+# --- IDE / Editor ---
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- Heavy training artifacts (do not commit) ---
+*.pt
+*.pth
+*.ckpt
+*.zip
+
+# --- Large generated datasets / scratch ---
+synthetic_data/
+*.xml
+!data/**/*.xml
+
+# Keep small result artifacts for reproducibility showcase
+!output/log.json
+!output/stats.json
+!output_conditioned/log.json
+!output_conditioned/stats.json
+
+# --- OS junk ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Misc ---
+*.log
