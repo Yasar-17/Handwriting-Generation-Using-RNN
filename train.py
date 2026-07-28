@@ -131,7 +131,7 @@ def sample_conditioned(
     consecutive_pen_up = 0
 
     for step in range(max_seq_len):
-        params, hidden, _ = model(x, char_tensor, char_mask, hidden)
+        params, hidden, _ = model(x, char_tensor, char_mask, hidden, chunk_size=1)
 
         pi = params["pi"][0, 0]
         mu_x = params["mu_x"][0, 0]
@@ -452,6 +452,14 @@ def main() -> None:
     parser.add_argument("--disc_dropout", type=float, default=0.2, help="Discriminator dropout rate")
     parser.add_argument("--adv_weight", type=float, default=0.1, help="Weight for adversarial loss combined with MDN NLL")
     parser.add_argument("--disc_lr", type=float, default=1e-4, help="Discriminator learning rate")
+    parser.add_argument(
+        "--chunk_size", type=int, default=1,
+        help="Conditioned training speedup: number of timesteps per chunked "
+             "LSTM call. 1 = exact per-step recurrence (Graves 2013). "
+             "Larger values (e.g. 16) trade a small amount of attention "
+             "granularity for a large reduction in LSTM launch overhead. "
+             "Sampling always uses chunk_size=1 for fidelity.",
+    )
     args = parser.parse_args()
 
     torch.manual_seed(args.seed)
@@ -522,6 +530,7 @@ def main() -> None:
             char_vocab_size=len(vocab),
             char_embed_dim=args.char_embed_dim,
             dropout=args.dropout,
+            chunk_size=args.chunk_size,
         ).to(device)
     else:
         model = MDNRNN(

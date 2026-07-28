@@ -1,5 +1,11 @@
 # Handwriting Generation Using RNN + GAN
 
+![Python](https://img.shields.io/badge/python-%E2%89%A53.10-blue.svg)
+![PyTorch](https://img.shields.io/badge/PyTorch-%E2%89%A52.0-ee4c2c.svg)
+![License](https://img.shields.io/badge/license-MIT-green.svg)
+![Status](https://img.shields.io/badge/status-active-success.svg)
+![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)
+
 A PyTorch implementation of **online (stroke‑based) handwriting synthesis** that combines a
 **Mixture‑Density Recurrent Neural Network** (Mixture‑Density Network + LSTM) with optional
 **Generative Adversarial refinement**, following Alex Graves' seminal paper
@@ -19,9 +25,40 @@ human‑like.
 
 ---
 
+## Results Gallery
+
+The rendered samples below are committed in the repository (under `output/samples/` and
+`output_conditioned/samples/`) and show how the strokes improve as training progresses.
+They were produced on the bundled **synthetic IAM‑style data** — enough to demonstrate that
+the full pipeline learns, with the negative log‑likelihood decreasing steadily for both
+modes (see the [Results](#results) section for the numbers).
+
+### Unconditional MDN‑RNN (free‑form stroke synthesis)
+
+| Epoch 0 (random / barely structured) | Epoch 24 (coherent strokes) |
+|---|---|
+| ![uncond-epoch0](output/samples/epoch_0000.png) | ![uncond-epoch24](output/samples/epoch_0024.png) |
+
+### Conditioned MDN‑RNN with windowed attention
+
+The conditioned model is asked to write a fixed string (`"the quick brown fox"` during
+training). Early epochs produce wobbly, misaligned strokes; later epochs start to follow
+the conditioning more closely.
+
+| Epoch 0 (informal jitter) | Epoch 9 (beginning of structure) |
+|---|---|
+| ![cond-epoch0](output_conditioned/samples/epoch_0000.png) | ![cond-epoch9](output_conditioned/samples/epoch_0009.png) |
+
+> Train on the **real IAM‑OnDB** dataset to obtain human‑legible handwriting; the synthetic
+> data only validates that every component (attention, MDN, masking, rendering) learns
+> end‑to‑end.
+
+---
+
 ## Table of Contents
 
 - [Highlights](#highlights)
+- [Results Gallery](#results-gallery)
 - [Architecture](#architecture)
 - [Repository Layout](#repository-layout)
 - [Installation](#installation)
@@ -289,6 +326,31 @@ python train.py --conditioned --use_gan \
     ... (other args as above)
 ```
 
+### Speeding up conditioned training (`--chunk_size`)
+
+The conditioned model has a recurrent attention‑feedback dependency that, in its exact form
+(Graves 2013), forces the LSTM to be unrolled one timestep at a time — this dominates CPU
+training time. Passing `--chunk_size N > 1` switches to a **truncated‑BPTT‑style
+approximation**: the attention context is held constant within each *chunk* of `N`
+timesteps and only refreshed between chunks, so the LSTM is invoked `ceil(T / N)` times
+instead of `T` times. The monotonic character‑alignment `κ` is still accumulated across
+chunks, so global alignment remains monotone; only the *per‑step* context is coarsened.
+
+A micro‑benchmark (CPU, `T=500`, batch 8, 3‑layer LSTM‑256) measuring a forward pass:
+
+| `--chunk_size` | forward time | speedup |
+|---:|---:|---:|
+| 1 (exact recurrence) | ~1950 ms | 1.0× |
+| 16 | ~377 ms | ~5.2× |
+| 32 | ~326 ms | ~6.0× |
+
+Sampling (`sample_conditioned`, `eval.py`) always uses `chunk_size=1` for maximum fidelity,
+so this flag is a pure **training** speedup knob — recommended values: **8–32**.
+
+```bash
+python train.py --conditioned --chunk_size 16 --data_dir ./synthetic_data ...
+```
+
 ### Outputs
 
 - `output/checkpoints/checkpoint_epoch_XXXX.pt` — per‑epoch checkpoints.
@@ -456,6 +518,7 @@ comparison figures so the effect of adversarial training is visible directly.
 | `--disc_lr` | 1e‑4 | Discriminator learning rate |
 | `--disc_hidden_dim` | 128 | Discriminator channel base |
 | `--disc_num_layers` | 4 | Conv1D layers in the discriminator |
+| `--chunk_size` | 1 | Conditioned training speedup: LSTM call per chunk of `N` steps (1 = exact recurrence). Sampling always uses 1. |
 | `--seed` | 42 | RNG seed for reproducibility |
 | `--resume` | None | Checkpoint path to resume from |
 

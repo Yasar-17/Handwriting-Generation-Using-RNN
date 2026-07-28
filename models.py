@@ -167,16 +167,24 @@ class WindowedAttention(nn.Module):
         lstm_out: torch.Tensor,
         char_embeddings: torch.Tensor,
         char_mask: torch.Tensor | None = None,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+        kappa_offset: torch.Tensor | None = None,
+        return_kappa: bool = False,
+    ) -> tuple[torch.Tensor, torch.Tensor] | tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Args:
             lstm_out: (B, T, hidden_dim)  RNN hidden states
             char_embeddings: (B, C, char_embed_dim)  character embedding sequence
             char_mask: (B, C)  boolean mask; True = valid character
+            kappa_offset: (B, K) optional cumulative kappa carried over from a
+                previous chunk so monotonic attention continues across chunks
+                during chunked training. When None, kappa starts from zero.
+            return_kappa: if True, also return the final cumulative kappa
+                (B, K) so it can be passed to the next chunk.
 
         Returns:
             context: (B, T, char_embed_dim)  attention-weighted context vectors
             phi: (B, T, C)  attention weights for visualization
+            (optional) final_kappa: (B, K)  cumulative kappa at the last step
         """
         B, T, _ = lstm_out.shape
         B, C, _ = char_embeddings.shape
@@ -188,7 +196,13 @@ class WindowedAttention(nn.Module):
 
         # kappa_hat -> cumulative kappa (monotonic progression)
         # kappa_t = sum_{t'=1}^{t} exp(kappa_hat_t')
-        kappa = torch.cumsum(torch.exp(kappa_hat), dim=1)  # (B, T, K)
+        kappa_step = torch.exp(kappa_hat)            # (B, T, K)
+        cum_kappa = torch.cumsum(kappa_step, dim=1)  # (B, T, K)
+        if kappa_offset is None:
+            kappa = cum_kappa
+        else:
+            kappa = kappa_offset.unsqueeze(1) + cum_kappa  # continue across chunk
+        final_kappa = kappa[:, -1, :]  # (B, K)
 
         # Clamp beta and alpha to be positive
         beta = torch.exp(beta)   # (B, T, K)
@@ -221,6 +235,8 @@ class WindowedAttention(nn.Module):
         # Context vector: weighted sum of character embeddings
         context = torch.bmm(phi, char_embeddings)  # (B, T, char_embed_dim)
 
+        if return_kappa:
+            return context, phi, final_kappa
         return context, phi
 
 
@@ -248,6 +264,7 @@ class MDNRNNConditioned(nn.Module):
         char_vocab_size: int = 80,
         char_embed_dim: int = 32,
         dropout: float = 0.2,
+        chunk_size: int = 1,
     ):
         super().__init__()
 
@@ -257,6 +274,13 @@ class MDNRNNConditioned(nn.Module):
         self.num_mixtures = num_mixtures
         self.char_vocab_size = char_vocab_size
         self.char_embed_dim = char_embed_dim
+        # >1 enabling chunked training: the attention context is held constant
+        # within a chunk of `chunk_size` timesteps (a truncated-BPTT-style
+        # approximation) and only refreshed between chunks. This trades a small
+        # amount of attention granularity for a large reduction in LSTM kernel
+        # launch overhead (T single-step calls -> ceil(T/chunk_size) batched
+        # calls). chunk_size=1 reproduces the exact Graves (2013) recurrence.
+        self.chunk_size = chunk_size
 
         self.char_embedding = nn.Embedding(char_vocab_size, char_embed_dim)
 
@@ -300,25 +324,43 @@ class MDNRNNConditioned(nn.Module):
         char_ids: torch.Tensor,
         char_mask: torch.Tensor | None = None,
         hidden: tuple[torch.Tensor, torch.Tensor] | None = None,
+        chunk_size: int | None = None,
     ) -> tuple[dict[str, torch.Tensor], tuple[torch.Tensor, torch.Tensor], torch.Tensor]:
-        """Step-by-step forward pass with windowed attention fed back into the LSTM.
+        """Forward pass with windowed attention fed back into the LSTM.
 
-        The LSTM must be unrolled timestep-by-timestep because the attention
-        context at timestep t is computed from the LSTM output at t-1 and is
-        part of the LSTM *input* at t. A single batched LSTM call could not
-        express this recurrent dependency.
+        Two execution paths:
+
+        * ``chunk_size == 1`` (default, exact Graves 2013 recurrence): the LSTM
+          is unrolled timestep-by-timestep because the attention context at
+          timestep ``t`` is computed from the LSTM output at ``t-1`` and is
+          part of the LSTM *input* at ``t``. A single batched LSTM call could
+          not express this recurrent dependency.
+
+        * ``chunk_size > 1`` (training speedup): the sequence is split into
+          contiguous chunks of ``chunk_size`` timesteps. The attention context
+          computed at the end of a chunk is reused for *all* timesteps of the
+          next chunk, so the LSTM can be invoked once per chunk instead of once
+          per timestep. This is a truncated-BPTT-style approximation: the
+          monotonic attention ``kappa`` is still accumulated across chunks
+          (via ``kappa_offset``), but the context vector is held constant within
+          each chunk, which slightly coarsens per-step alignment while keeping
+          the global alignment monotone. Recommended values: 8–32.
 
         Args:
             x: (B, T, 3)  normalized (delta_x, delta_y, pen_up)
             char_ids: (B, C)  character indices for the conditioning text
             char_mask: (B, C)  boolean mask; True = valid character
             hidden: (h_0, c_0) each (num_layers, B, hidden_dim), optional
+            chunk_size: override ``self.chunk_size`` for this call. Use 1 for
+                high-fidelity inference (e.g. autoregressive sampling); larger
+                values are suitable for training.
 
         Returns:
             params: MDN parameters (same keys as MDNRNN)
             hidden: (h_T, c_T) for autoregressive sampling
             phi: (B, T, C) attention weights for visualization
         """
+        cs = chunk_size if chunk_size is not None else self.chunk_size
         B, T, _ = x.shape
         char_embeds = self.char_embedding(char_ids)  # (B, C, char_embed_dim)
 
@@ -332,19 +374,46 @@ class MDNRNNConditioned(nn.Module):
         all_lstm_out = []
         all_phi = []
 
-        for t in range(T):
-            x_t = x[:, t:t+1, :]  # (B, 1, 3)
-            lstm_in = torch.cat([x_t, context], dim=-1)  # (B, 1, 3+char_embed_dim)
+        if cs is None or cs <= 1:
+            # ----- Exact recurrence: one LSTM step per timestep -----
+            for t in range(T):
+                x_t = x[:, t:t+1, :]  # (B, 1, 3)
+                lstm_in = torch.cat([x_t, context], dim=-1)  # (B, 1, 3+char_embed_dim)
 
-            lstm_out_t, hidden = self.lstm(lstm_in, hidden)
-            all_lstm_out.append(lstm_out_t)
+                lstm_out_t, hidden = self.lstm(lstm_in, hidden)
+                all_lstm_out.append(lstm_out_t)
 
-            # Compute attention for NEXT timestep
-            if t < T - 1:
-                context, phi_t = self.attention(lstm_out_t, char_embeds, char_mask)
-                all_phi.append(phi_t)
-            else:
-                all_phi.append(torch.zeros(B, 1, char_embeds.size(1), device=x.device))
+                # Compute attention for NEXT timestep
+                if t < T - 1:
+                    context, phi_t = self.attention(lstm_out_t, char_embeds, char_mask)
+                    all_phi.append(phi_t)
+                else:
+                    all_phi.append(torch.zeros(B, 1, char_embeds.size(1), device=x.device))
+        else:
+            # ----- Chunked recurrence: one LSTM call per chunk -----
+            kappa_offset = None
+            start = 0
+            while start < T:
+                end = min(start + cs, T)
+                W = end - start
+                x_chunk = x[:, start:end, :]                       # (B, W, 3)
+                # Broadcast the (chunk-)current context across the W timesteps
+                context_chunk = context.expand(B, W, self.char_embed_dim)
+                lstm_in = torch.cat([x_chunk, context_chunk], dim=-1)  # (B, W, 3+E)
+                lstm_out_chunk, hidden = self.lstm(lstm_in, hidden)   # (B, W, H)
+                all_lstm_out.append(lstm_out_chunk)
+
+                # Refresh context from the chunk's final hidden state for the
+                # next chunk; carry kappa forward to keep attention monotonic.
+                last_lstm = lstm_out_chunk[:, -1:, :]
+                context, phi_last, final_kappa = self.attention(
+                    last_lstm, char_embeds, char_mask,
+                    kappa_offset=kappa_offset, return_kappa=True,
+                )
+                kappa_offset = final_kappa  # (B, K)
+                # Visualize the chunk-end attention window repeated across the chunk
+                all_phi.append(phi_last.expand(B, W, char_embeds.size(1)))
+                start = end
 
         lstm_out = torch.cat(all_lstm_out, dim=1)  # (B, T, hidden_dim)
         phi = torch.cat(all_phi, dim=1)  # (B, T, C)
