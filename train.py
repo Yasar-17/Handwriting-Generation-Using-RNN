@@ -19,6 +19,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.optim as optim
+from torch.cuda.amp import GradScaler, autocast
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -191,6 +192,10 @@ def train_one_epoch_uncond(
     device: torch.device,
     clip_grad: float = 5.0,
     adv_weight: float = 0.1,
+    grad_accum_steps: int = 1,
+    use_amp: bool = False,
+    scaler: GradScaler | None = None,
+    disc_scaler: GradScaler | None = None,
 ) -> dict[str, float]:
     model.train()
     if discriminator is not None:
@@ -200,45 +205,74 @@ def train_one_epoch_uncond(
     epoch_disc_loss = 0.0
     count = 0
 
-    for batch in tqdm(loader, desc="  Train", leave=False):
+    for batch_idx, batch in enumerate(tqdm(loader, desc="  Train", leave=False)):
         data = batch["data"].to(device)
         mask = batch["mask"].to(device)
 
-        optimizer.zero_grad()
-        params, _ = model(data)
-        mdn = loss_fn(params, data, mask)
-        loss = mdn
+        should_accumulate = (batch_idx + 1) % grad_accum_steps != 0
+
+        with autocast(enabled=use_amp):
+            params, _ = model(data)
+            mdn = loss_fn(params, data, mask)
+            loss = mdn
+
+            if discriminator is not None:
+                fake_seq = mdn_mixture_mean(
+                    params["mu_x"], params["mu_y"], params["pi"], params["pen_up"]
+                )
+                disc_fake = discriminator(fake_seq)
+                disc_real = discriminator(data).detach()
+
+                _, gen_adv = adversarial_loss(disc_real, disc_fake, mask[:, 0])
+                loss = loss + adv_weight * gen_adv
+
+                disc_optimizer.zero_grad()
+                disc_real = discriminator(data)
+                disc_fake = discriminator(fake_seq.detach())
+                disc_loss, _ = adversarial_loss(disc_real, disc_fake, mask[:, 0])
+            else:
+                gen_adv = torch.tensor(0.0)
+                disc_loss = torch.tensor(0.0)
+
+        loss = loss / grad_accum_steps
+        if use_amp:
+            scaler.scale(loss).backward()
+        else:
+            loss.backward()
+
+        if not should_accumulate:
+            if use_amp:
+                scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), clip_grad)
+            if use_amp:
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                optimizer.step()
+            optimizer.zero_grad()
 
         if discriminator is not None:
-            fake_seq = mdn_mixture_mean(
-                params["mu_x"], params["mu_y"], params["pi"], params["pen_up"]
-            )
-            disc_fake = discriminator(fake_seq)
-            disc_real = discriminator(data).detach()
+            disc_loss = disc_loss / grad_accum_steps
+            if use_amp:
+                disc_scaler.scale(disc_loss).backward()
+            else:
+                disc_loss.backward()
 
-            _, gen_adv = adversarial_loss(disc_real, disc_fake, mask[:, 0])
-            loss = loss + adv_weight * gen_adv
-
-            disc_optimizer.zero_grad()
-            disc_real = discriminator(data)
-            disc_fake = discriminator(fake_seq.detach())
-            disc_loss, _ = adversarial_loss(disc_real, disc_fake, mask[:, 0])
-
-            disc_loss.backward()
-            torch.nn.utils.clip_grad_norm_(discriminator.parameters(), clip_grad)
-            disc_optimizer.step()
-        else:
-            gen_adv = torch.tensor(0.0)
-            disc_loss = torch.tensor(0.0)
-
-        loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), clip_grad)
-        optimizer.step()
+            if not should_accumulate:
+                if use_amp:
+                    disc_scaler.unscale_(disc_optimizer)
+                torch.nn.utils.clip_grad_norm_(discriminator.parameters(), clip_grad)
+                if use_amp:
+                    disc_scaler.step(disc_optimizer)
+                    disc_scaler.update()
+                else:
+                    disc_optimizer.step()
+                disc_optimizer.zero_grad()
 
         batch_valid = mask.sum().item()
         epoch_mdn_loss += mdn.item() * batch_valid
         epoch_adv_loss += gen_adv.item() * batch_valid
-        epoch_disc_loss += disc_loss.item() * batch_valid
+        epoch_disc_loss += disc_loss.item() * grad_accum_steps * batch_valid
         count += batch_valid
 
     return {
@@ -255,6 +289,7 @@ def evaluate_uncond(
     loss_fn: MDNLoss,
     discriminator: SequenceDiscriminator | None,
     device: torch.device,
+    use_amp: bool = False,
 ) -> dict[str, float]:
     model.eval()
     if discriminator is not None:
@@ -268,21 +303,22 @@ def evaluate_uncond(
         data = batch["data"].to(device)
         mask = batch["mask"].to(device)
 
-        params, _ = model(data)
-        mdn = loss_fn(params, data, mask)
+        with autocast(enabled=use_amp):
+            params, _ = model(data)
+            mdn = loss_fn(params, data, mask)
 
-        if discriminator is not None:
-            fake_seq = mdn_mixture_mean(
-                params["mu_x"], params["mu_y"], params["pi"], params["pen_up"]
-            )
-            disc_fake = discriminator(fake_seq)
-            disc_real = discriminator(data)
+            if discriminator is not None:
+                fake_seq = mdn_mixture_mean(
+                    params["mu_x"], params["mu_y"], params["pi"], params["pen_up"]
+                )
+                disc_fake = discriminator(fake_seq)
+                disc_real = discriminator(data)
 
-            _, gen_adv = adversarial_loss(disc_real, disc_fake, mask[:, 0])
-            disc_loss, _ = adversarial_loss(disc_real, disc_fake, mask[:, 0])
-        else:
-            gen_adv = torch.tensor(0.0)
-            disc_loss = torch.tensor(0.0)
+                _, gen_adv = adversarial_loss(disc_real, disc_fake, mask[:, 0])
+                disc_loss, _ = adversarial_loss(disc_real, disc_fake, mask[:, 0])
+            else:
+                gen_adv = torch.tensor(0.0)
+                disc_loss = torch.tensor(0.0)
 
         batch_valid = mask.sum().item()
         val_mdn_loss += mdn.item() * batch_valid
@@ -311,6 +347,10 @@ def train_one_epoch_cond(
     device: torch.device,
     clip_grad: float = 5.0,
     adv_weight: float = 0.1,
+    grad_accum_steps: int = 1,
+    use_amp: bool = False,
+    scaler: GradScaler | None = None,
+    disc_scaler: GradScaler | None = None,
 ) -> dict[str, float]:
     model.train()
     if discriminator is not None:
@@ -320,47 +360,76 @@ def train_one_epoch_cond(
     epoch_disc_loss = 0.0
     count = 0
 
-    for batch in tqdm(loader, desc="  Train", leave=False):
+    for batch_idx, batch in enumerate(tqdm(loader, desc="  Train", leave=False)):
         data = batch["data"].to(device)
         mask = batch["mask"].to(device)
         char_ids = batch["char_ids"].to(device)
         char_mask = batch["char_mask"].to(device)
 
-        optimizer.zero_grad()
-        params, _, _ = model(data, char_ids, char_mask)
-        mdn = loss_fn(params, data, mask)
-        loss = mdn
+        should_accumulate = (batch_idx + 1) % grad_accum_steps != 0
+
+        with autocast(enabled=use_amp):
+            params, _, _ = model(data, char_ids, char_mask)
+            mdn = loss_fn(params, data, mask)
+            loss = mdn
+
+            if discriminator is not None:
+                fake_seq = mdn_mixture_mean(
+                    params["mu_x"], params["mu_y"], params["pi"], params["pen_up"]
+                )
+                disc_fake = discriminator(fake_seq)
+                disc_real = discriminator(data).detach()
+
+                _, gen_adv = adversarial_loss(disc_real, disc_fake, mask[:, 0])
+                loss = loss + adv_weight * gen_adv
+
+                disc_optimizer.zero_grad()
+                disc_real = discriminator(data)
+                disc_fake = discriminator(fake_seq.detach())
+                disc_loss, _ = adversarial_loss(disc_real, disc_fake, mask[:, 0])
+            else:
+                gen_adv = torch.tensor(0.0)
+                disc_loss = torch.tensor(0.0)
+
+        loss = loss / grad_accum_steps
+        if use_amp:
+            scaler.scale(loss).backward()
+        else:
+            loss.backward()
+
+        if not should_accumulate:
+            if use_amp:
+                scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), clip_grad)
+            if use_amp:
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                optimizer.step()
+            optimizer.zero_grad()
 
         if discriminator is not None:
-            fake_seq = mdn_mixture_mean(
-                params["mu_x"], params["mu_y"], params["pi"], params["pen_up"]
-            )
-            disc_fake = discriminator(fake_seq)
-            disc_real = discriminator(data).detach()
+            disc_loss = disc_loss / grad_accum_steps
+            if use_amp:
+                disc_scaler.scale(disc_loss).backward()
+            else:
+                disc_loss.backward()
 
-            _, gen_adv = adversarial_loss(disc_real, disc_fake, mask[:, 0])
-            loss = loss + adv_weight * gen_adv
-
-            disc_optimizer.zero_grad()
-            disc_real = discriminator(data)
-            disc_fake = discriminator(fake_seq.detach())
-            disc_loss, _ = adversarial_loss(disc_real, disc_fake, mask[:, 0])
-
-            disc_loss.backward()
-            torch.nn.utils.clip_grad_norm_(discriminator.parameters(), clip_grad)
-            disc_optimizer.step()
-        else:
-            gen_adv = torch.tensor(0.0)
-            disc_loss = torch.tensor(0.0)
-
-        loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), clip_grad)
-        optimizer.step()
+            if not should_accumulate:
+                if use_amp:
+                    disc_scaler.unscale_(disc_optimizer)
+                torch.nn.utils.clip_grad_norm_(discriminator.parameters(), clip_grad)
+                if use_amp:
+                    disc_scaler.step(disc_optimizer)
+                    disc_scaler.update()
+                else:
+                    disc_optimizer.step()
+                disc_optimizer.zero_grad()
 
         batch_valid = mask.sum().item()
         epoch_mdn_loss += mdn.item() * batch_valid
         epoch_adv_loss += gen_adv.item() * batch_valid
-        epoch_disc_loss += disc_loss.item() * batch_valid
+        epoch_disc_loss += disc_loss.item() * grad_accum_steps * batch_valid
         count += batch_valid
 
     return {
@@ -377,6 +446,7 @@ def evaluate_cond(
     loss_fn: MDNLoss,
     discriminator: SequenceDiscriminator | None,
     device: torch.device,
+    use_amp: bool = False,
 ) -> dict[str, float]:
     model.eval()
     if discriminator is not None:
@@ -392,21 +462,22 @@ def evaluate_cond(
         char_ids = batch["char_ids"].to(device)
         char_mask = batch["char_mask"].to(device)
 
-        params, _, _ = model(data, char_ids, char_mask)
-        mdn = loss_fn(params, data, mask)
+        with autocast(enabled=use_amp):
+            params, _, _ = model(data, char_ids, char_mask)
+            mdn = loss_fn(params, data, mask)
 
-        if discriminator is not None:
-            fake_seq = mdn_mixture_mean(
-                params["mu_x"], params["mu_y"], params["pi"], params["pen_up"]
-            )
-            disc_fake = discriminator(fake_seq)
-            disc_real = discriminator(data)
+            if discriminator is not None:
+                fake_seq = mdn_mixture_mean(
+                    params["mu_x"], params["mu_y"], params["pi"], params["pen_up"]
+                )
+                disc_fake = discriminator(fake_seq)
+                disc_real = discriminator(data)
 
-            _, gen_adv = adversarial_loss(disc_real, disc_fake, mask[:, 0])
-            disc_loss, _ = adversarial_loss(disc_real, disc_fake, mask[:, 0])
-        else:
-            gen_adv = torch.tensor(0.0)
-            disc_loss = torch.tensor(0.0)
+                _, gen_adv = adversarial_loss(disc_real, disc_fake, mask[:, 0])
+                disc_loss, _ = adversarial_loss(disc_real, disc_fake, mask[:, 0])
+            else:
+                gen_adv = torch.tensor(0.0)
+                disc_loss = torch.tensor(0.0)
 
         batch_valid = mask.sum().item()
         val_mdn_loss += mdn.item() * batch_valid
@@ -419,6 +490,79 @@ def evaluate_cond(
         "adv_loss": val_adv_loss / max(count, 1),
         "disc_loss": val_disc_loss / max(count, 1),
     }
+
+
+# ---------------------------------------------------------------------------
+# Plot training loss
+# ---------------------------------------------------------------------------
+
+def plot_training_loss(log: list[dict], output_dir: Path) -> None:
+    """Generate training loss plots from the log."""
+    if not log:
+        return
+
+    epochs = [entry["epoch"] for entry in log]
+    train_mdn = [entry["train_mdn_loss"] for entry in log]
+    val_mdn = [entry["val_mdn_loss"] for entry in log]
+    train_total = [entry["train_total"] for entry in log]
+    val_total = [entry["val_total"] for entry in log]
+    lr = [entry["lr"] for entry in log]
+
+    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+
+    axes[0].plot(epochs, train_mdn, label="Train MDN Loss", alpha=0.7)
+    axes[0].plot(epochs, val_mdn, label="Val MDN Loss", alpha=0.7)
+    axes[0].set_xlabel("Epoch")
+    axes[0].set_ylabel("MDN Loss")
+    axes[0].set_title("MDN Negative Log-Likelihood")
+    axes[0].legend()
+    axes[0].grid(True, alpha=0.3)
+
+    axes[1].plot(epochs, train_total, label="Train Total", alpha=0.7)
+    axes[1].plot(epochs, val_total, label="Val Total", alpha=0.7)
+    axes[1].set_xlabel("Epoch")
+    axes[1].set_ylabel("Total Loss")
+    axes[1].set_title("Total Loss (MDN + Adversarial)")
+    axes[1].legend()
+    axes[1].grid(True, alpha=0.3)
+
+    axes[2].plot(epochs, lr, label="Learning Rate", color="red", alpha=0.7)
+    axes[2].set_xlabel("Epoch")
+    axes[2].set_ylabel("Learning Rate")
+    axes[2].set_title("Learning Rate Schedule")
+    axes[2].legend()
+    axes[2].grid(True, alpha=0.3)
+
+    fig.tight_layout()
+    fig.savefig(output_dir / "training_loss.png", dpi=150)
+    plt.close(fig)
+
+    if any("train_adv_loss" in entry for entry in log):
+        train_adv = [entry.get("train_adv_loss", 0) for entry in log]
+        val_adv = [entry.get("val_adv_loss", 0) for entry in log]
+        train_disc = [entry.get("train_disc_loss", 0) for entry in log]
+        val_disc = [entry.get("val_disc_loss", 0) for entry in log]
+
+        fig2, axes2 = plt.subplots(1, 2, figsize=(12, 5))
+        axes2[0].plot(epochs, train_adv, label="Train Adv", alpha=0.7)
+        axes2[0].plot(epochs, val_adv, label="Val Adv", alpha=0.7)
+        axes2[0].set_xlabel("Epoch")
+        axes2[0].set_ylabel("Adversarial Loss")
+        axes2[0].set_title("Generator Adversarial Loss")
+        axes2[0].legend()
+        axes2[0].grid(True, alpha=0.3)
+
+        axes2[1].plot(epochs, train_disc, label="Train Disc", alpha=0.7)
+        axes2[1].plot(epochs, val_disc, label="Val Disc", alpha=0.7)
+        axes2[1].set_xlabel("Epoch")
+        axes2[1].set_ylabel("Discriminator Loss")
+        axes2[1].set_title("Discriminator Loss")
+        axes2[1].legend()
+        axes2[1].grid(True, alpha=0.3)
+
+        fig2.tight_layout()
+        fig2.savefig(output_dir / "training_gan_loss.png", dpi=150)
+        plt.close(fig2)
 
 
 # ---------------------------------------------------------------------------
@@ -460,6 +604,11 @@ def main() -> None:
              "granularity for a large reduction in LSTM launch overhead. "
              "Sampling always uses chunk_size=1 for fidelity.",
     )
+    parser.add_argument("--grad_accum_steps", type=int, default=1, help="Number of steps to accumulate gradients")
+    parser.add_argument("--use_amp", action="store_true", help="Enable automatic mixed precision training")
+    parser.add_argument("--warmup_epochs", type=int, default=5, help="Number of warmup epochs for LR scheduler")
+    parser.add_argument("--use_cosine_annealing", action="store_true", help="Use cosine annealing LR scheduler")
+    parser.add_argument("--early_stopping_patience", type=int, default=0, help="Early stopping patience (0 = disabled)")
     args = parser.parse_args()
 
     torch.manual_seed(args.seed)
@@ -545,6 +694,11 @@ def main() -> None:
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode="min", factor=0.5, patience=5
     )
+    cosine_scheduler = None
+    if args.use_cosine_annealing:
+        cosine_scheduler = optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=args.epochs, eta_min=1e-6
+        )
     loss_fn = MDNLoss()
 
     discriminator = None
@@ -559,6 +713,9 @@ def main() -> None:
         disc_optimizer = optim.Adam(discriminator.parameters(), lr=args.disc_lr)
         print(f"GAN training enabled | adv_weight={args.adv_weight} | disc_lr={args.disc_lr}")
 
+    scaler = GradScaler(enabled=args.use_amp)
+    disc_scaler = GradScaler(enabled=args.use_amp) if args.use_gan else None
+
     start_epoch = 0
     log = []
 
@@ -568,6 +725,8 @@ def main() -> None:
         model.load_state_dict(ckpt["model"])
         optimizer.load_state_dict(ckpt["optimizer"])
         scheduler.load_state_dict(ckpt["scheduler"])
+        if args.use_cosine_annealing and "cosine_scheduler" in ckpt:
+            cosine_scheduler.load_state_dict(ckpt["cosine_scheduler"])
         if args.use_gan and "discriminator" in ckpt:
             discriminator.load_state_dict(ckpt["discriminator"])
             disc_optimizer.load_state_dict(ckpt["disc_optimizer"])
@@ -578,23 +737,57 @@ def main() -> None:
     # Training loop
     # -----------------------------------------------------------------------
     print(f"\nTraining for {args.epochs} epochs (resuming from epoch {start_epoch})...")
+    if args.use_amp:
+        print("  Mixed precision (AMP) enabled")
+    if args.grad_accum_steps > 1:
+        print(f"  Gradient accumulation: {args.grad_accum_steps} steps (effective batch size: {args.batch_size * args.grad_accum_steps})")
+    if args.warmup_epochs > 0:
+        print(f"  LR warmup: {args.warmup_epochs} epochs")
+    if args.use_cosine_annealing:
+        print("  Cosine annealing LR scheduler enabled")
+    if args.early_stopping_patience > 0:
+        print(f"  Early stopping enabled (patience: {args.early_stopping_patience})")
+
     best_val = float("inf")
+    patience_counter = 0
+    best_val_epoch = 0
 
     for epoch in range(start_epoch, args.epochs):
         if args.conditioned:
             train_metrics = train_one_epoch_cond(
                 model, train_loader, loss_fn, discriminator,
                 optimizer, disc_optimizer, device, args.clip_grad, args.adv_weight,
+                grad_accum_steps=args.grad_accum_steps,
+                use_amp=args.use_amp,
+                scaler=scaler,
+                disc_scaler=disc_scaler,
             )
-            val_metrics = evaluate_cond(model, val_loader, loss_fn, discriminator, device)
+            val_metrics = evaluate_cond(model, val_loader, loss_fn, discriminator, device, use_amp=args.use_amp)
         else:
             train_metrics = train_one_epoch_uncond(
                 model, train_loader, loss_fn, discriminator,
                 optimizer, disc_optimizer, device, args.clip_grad, args.adv_weight,
+                grad_accum_steps=args.grad_accum_steps,
+                use_amp=args.use_amp,
+                scaler=scaler,
+                disc_scaler=disc_scaler,
             )
-            val_metrics = evaluate_uncond(model, val_loader, loss_fn, discriminator, device)
+            val_metrics = evaluate_uncond(model, val_loader, loss_fn, discriminator, device, use_amp=args.use_amp)
 
-        scheduler.step(val_metrics["mdn_loss"])
+        if args.use_cosine_annealing:
+            if epoch < args.warmup_epochs:
+                warmup_factor = (epoch + 1) / args.warmup_epochs
+                for param_group in optimizer.param_groups:
+                    param_group["lr"] = args.lr * warmup_factor
+            else:
+                cosine_scheduler.step()
+        else:
+            if epoch >= args.warmup_epochs:
+                scheduler.step(val_metrics["mdn_loss"])
+            elif epoch < args.warmup_epochs:
+                warmup_factor = (epoch + 1) / args.warmup_epochs
+                for param_group in optimizer.param_groups:
+                    param_group["lr"] = args.lr * warmup_factor
 
         lr = optimizer.param_groups[0]["lr"]
         train_total = train_metrics["mdn_loss"] + args.adv_weight * train_metrics["adv_loss"]
@@ -667,6 +860,10 @@ def main() -> None:
         is_best = val_total < best_val
         if is_best:
             best_val = val_total
+            patience_counter = 0
+            best_val_epoch = epoch
+        else:
+            patience_counter += 1
 
         ckpt = {
             "epoch": epoch,
@@ -677,6 +874,8 @@ def main() -> None:
             "log": log,
             "conditioned": args.conditioned,
         }
+        if args.use_cosine_annealing:
+            ckpt["cosine_scheduler"] = cosine_scheduler.state_dict()
         if args.use_gan:
             ckpt["discriminator"] = discriminator.state_dict()
             ckpt["disc_optimizer"] = disc_optimizer.state_dict()
@@ -685,7 +884,15 @@ def main() -> None:
         if is_best:
             torch.save(ckpt, ckpt_dir / "checkpoint_best.pt")
 
-    print(f"\nTraining complete. Best val total loss: {best_val:.4f}")
+        # Generate training loss plots
+        plot_training_loss(log, output_dir)
+
+        # Early stopping check
+        if args.early_stopping_patience > 0 and patience_counter >= args.early_stopping_patience:
+            print(f"\nEarly stopping triggered at epoch {epoch} (best val at epoch {best_val_epoch})")
+            break
+
+    print(f"\nTraining complete. Best val total loss: {best_val:.4f} at epoch {best_val_epoch}")
 
 
 if __name__ == "__main__":
