@@ -53,4 +53,11 @@ py-modules = [
     "verify_model",
     "sanity_check",
     "generate_synthetic_data",
+    "export_model",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
