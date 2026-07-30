@@ -1,0 +1,43 @@
+# Default configuration for handwriting generation training
+# Usage: python train.py --config config.yaml (requires pyyaml) or use as reference
+
+data:
+  data_dir: "./synthetic_data"
+  batch_size: 64
+  num_workers: 0
+
+model:
+  hidden_dim: 256
+  num_layers: 3
+  num_mixtures: 20
+  dropout: 0.2
+  conditioned: true
+  num_windows: 10
+  char_embed_dim: 32
+  chunk_size: 1
+
+training:
+  epochs: 50
+  lr: 0.001
+  clip_grad: 5.0
+  use_gan: false
+  adv_weight: 0.1
+  disc_lr: 0.0001
+  disc_hidden_dim: 128
+  disc_num_layers: 4
+  disc_dropout: 0.2
+  use_amp: false
+  grad_accum_steps: 1
+  warmup_epochs: 5
+  use_cosine_annealing: false
+  early_stopping_patience: 0
+  seed: 42
+
+sampling:
+  sample_every: 5
+  sample_len: 800
+  temperature: 0.5
+  condition_text: "the quick brown fox"
+
+output:
+  output_dir: "./output_conditioned"

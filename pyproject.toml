@@ -54,6 +54,8 @@ py-modules = [
     "sanity_check",
     "generate_synthetic_data",
     "export_model",
+    "inference",
+    "augmentations",
 ]
 
 [tool.pytest.ini_options]
