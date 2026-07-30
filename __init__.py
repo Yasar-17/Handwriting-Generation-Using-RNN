@@ -23,6 +23,19 @@ from .data import (
 )
 from .losses import MDNLoss, mdn_loss, mdn_mixture_mean, adversarial_loss
 from .models import MDNRNN, MDNRNNConditioned, SequenceDiscriminator, WindowedAttention
+from .augmentations import (
+    StrokeAugmentation,
+    RandomScale,
+    RandomRotation,
+    GaussianNoise,
+    RandomTimeWarp,
+    StrokeDropout,
+    Compose,
+    RandomApply,
+    get_default_augmentation,
+    get_strong_augmentation,
+    AugmentedStrokeDataset,
+)
 
 __all__ = [
     "CharVocab",
@@ -44,4 +57,15 @@ __all__ = [
     "MDNRNNConditioned",
     "SequenceDiscriminator",
     "WindowedAttention",
+    "StrokeAugmentation",
+    "RandomScale",
+    "RandomRotation",
+    "GaussianNoise",
+    "RandomTimeWarp",
+    "StrokeDropout",
+    "Compose",
+    "RandomApply",
+    "get_default_augmentation",
+    "get_strong_augmentation",
+    "AugmentedStrokeDataset",
 ]
