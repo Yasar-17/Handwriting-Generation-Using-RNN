@@ -11,6 +11,7 @@ renders them, and saves checkpoints.
 
 import argparse
 import json
+import logging
 import os
 import sys
 from pathlib import Path
@@ -21,6 +22,7 @@ import torch
 import torch.optim as optim
 from torch.cuda.amp import GradScaler, autocast
 from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -39,6 +41,8 @@ from data import (
 )
 from losses import MDNLoss, mdn_mixture_mean, adversarial_loss
 from models import MDNRNN, MDNRNNConditioned, SequenceDiscriminator
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -565,6 +569,27 @@ def plot_training_loss(log: list[dict], output_dir: Path) -> None:
         plt.close(fig2)
 
 
+def log_metrics_to_tensorboard(
+    writer: SummaryWriter,
+    epoch: int,
+    train_metrics: dict[str, float],
+    val_metrics: dict[str, float],
+    lr: float,
+) -> None:
+    """Log training and validation metrics to TensorBoard."""
+    writer.add_scalar("Loss/Train_MDN", train_metrics["mdn_loss"], epoch)
+    writer.add_scalar("Loss/Val_MDN", val_metrics["mdn_loss"], epoch)
+    writer.add_scalar("Loss/Train_Total", train_metrics["mdn_loss"] + 0.1 * train_metrics.get("adv_loss", 0), epoch)
+    writer.add_scalar("Loss/Val_Total", val_metrics["mdn_loss"] + 0.1 * val_metrics.get("adv_loss", 0), epoch)
+    writer.add_scalar("Metrics/Learning_Rate", lr, epoch)
+
+    if train_metrics.get("adv_loss", 0) > 0:
+        writer.add_scalar("Loss/Train_Adversarial", train_metrics["adv_loss"], epoch)
+        writer.add_scalar("Loss/Val_Adversarial", val_metrics["adv_loss"], epoch)
+        writer.add_scalar("Loss/Train_Discriminator", train_metrics["disc_loss"], epoch)
+        writer.add_scalar("Loss/Val_Discriminator", val_metrics["disc_loss"], epoch)
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -620,24 +645,28 @@ def main() -> None:
     samples_dir.mkdir(exist_ok=True)
     ckpt_dir = output_dir / "checkpoints"
     ckpt_dir.mkdir(exist_ok=True)
+    tb_dir = output_dir / "tensorboard"
+    tb_dir.mkdir(exist_ok=True)
+
+    writer = SummaryWriter(log_dir=str(tb_dir))
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     mode = "conditioned" if args.conditioned else "unconditional"
-    print(f"Device: {device} | Mode: {mode}")
+    logger.info("Device: %s | Mode: %s", device, mode)
 
     # -----------------------------------------------------------------------
     # Data
     # -----------------------------------------------------------------------
-    print("Collecting XML files...")
+    logger.info("Collecting XML files...")
     train_xml, val_xml, test_xml = prepare_splits(args.data_dir)
-    print(f"  Train: {len(train_xml)}, Val: {len(val_xml)}, Test: {len(test_xml)}")
+    logger.info("Train: %d, Val: %d, Test: %d", len(train_xml), len(val_xml), len(test_xml))
 
     if not train_xml:
-        print("No training data found. Exiting.")
+        logger.error("No training data found. Exiting.")
         sys.exit(1)
 
     mean_x, std_x, mean_y, std_y = compute_dataset_stats(train_xml)
-    print(f"  Stats: mean_x={mean_x:.4f}, std_x={std_x:.4f}, mean_y={mean_y:.4f}, std_y={std_y:.4f}")
+    logger.info("Stats: mean_x=%.4f, std_x=%.4f, mean_y=%.4f, std_y=%.4f", mean_x, std_x, mean_y, std_y)
 
     stats_path = output_dir / "stats.json"
     stats_path.write_text(json.dumps({
@@ -711,7 +740,7 @@ def main() -> None:
             dropout=args.disc_dropout,
         ).to(device)
         disc_optimizer = optim.Adam(discriminator.parameters(), lr=args.disc_lr)
-        print(f"GAN training enabled | adv_weight={args.adv_weight} | disc_lr={args.disc_lr}")
+        logger.info("GAN training enabled | adv_weight=%.2f | disc_lr=%.2e", args.adv_weight, args.disc_lr)
 
     scaler = GradScaler(enabled=args.use_amp)
     disc_scaler = GradScaler(enabled=args.use_amp) if args.use_gan else None
@@ -720,7 +749,7 @@ def main() -> None:
     log = []
 
     if args.resume:
-        print(f"Resuming from {args.resume}")
+        logger.info("Resuming from %s", args.resume)
         ckpt = torch.load(args.resume, map_location=device, weights_only=False)
         model.load_state_dict(ckpt["model"])
         optimizer.load_state_dict(ckpt["optimizer"])
@@ -736,17 +765,17 @@ def main() -> None:
     # -----------------------------------------------------------------------
     # Training loop
     # -----------------------------------------------------------------------
-    print(f"\nTraining for {args.epochs} epochs (resuming from epoch {start_epoch})...")
+    logger.info("\nTraining for %d epochs (resuming from epoch %d)...", args.epochs, start_epoch)
     if args.use_amp:
-        print("  Mixed precision (AMP) enabled")
+        logger.info("  Mixed precision (AMP) enabled")
     if args.grad_accum_steps > 1:
-        print(f"  Gradient accumulation: {args.grad_accum_steps} steps (effective batch size: {args.batch_size * args.grad_accum_steps})")
+        logger.info("  Gradient accumulation: %d steps (effective batch size: %d)", args.grad_accum_steps, args.batch_size * args.grad_accum_steps)
     if args.warmup_epochs > 0:
-        print(f"  LR warmup: {args.warmup_epochs} epochs")
+        logger.info("  LR warmup: %d epochs", args.warmup_epochs)
     if args.use_cosine_annealing:
-        print("  Cosine annealing LR scheduler enabled")
+        logger.info("  Cosine annealing LR scheduler enabled")
     if args.early_stopping_patience > 0:
-        print(f"  Early stopping enabled (patience: {args.early_stopping_patience})")
+        logger.info("  Early stopping enabled (patience: %d)", args.early_stopping_patience)
 
     best_val = float("inf")
     patience_counter = 0
@@ -793,21 +822,23 @@ def main() -> None:
         train_total = train_metrics["mdn_loss"] + args.adv_weight * train_metrics["adv_loss"]
         val_total = val_metrics["mdn_loss"] + args.adv_weight * val_metrics["adv_loss"]
 
+        log_metrics_to_tensorboard(writer, epoch, train_metrics, val_metrics, lr)
+
         if args.use_gan:
-            print(
-                f"Epoch {epoch:3d} | "
-                f"train_mdn={train_metrics['mdn_loss']:.4f} train_adv={train_metrics['adv_loss']:.4f} "
-                f"train_disc={train_metrics['disc_loss']:.4f} train_total={train_total:.4f} | "
-                f"val_mdn={val_metrics['mdn_loss']:.4f} val_adv={val_metrics['adv_loss']:.4f} "
-                f"val_disc={val_metrics['disc_loss']:.4f} val_total={val_total:.4f} | "
-                f"lr={lr:.6f}"
+            logger.info(
+                "Epoch %3d | "
+                "train_mdn=%.4f train_adv=%.4f train_disc=%.4f train_total=%.4f | "
+                "val_mdn=%.4f val_adv=%.4f val_disc=%.4f val_total=%.4f | "
+                "lr=%.6f",
+                epoch,
+                train_metrics["mdn_loss"], train_metrics["adv_loss"], train_metrics["disc_loss"], train_total,
+                val_metrics["mdn_loss"], val_metrics["adv_loss"], val_metrics["disc_loss"], val_total,
+                lr,
             )
         else:
-            print(
-                f"Epoch {epoch:3d} | "
-                f"train_loss={train_metrics['mdn_loss']:.4f} | "
-                f"val_loss={val_metrics['mdn_loss']:.4f} | "
-                f"lr={lr:.6f}"
+            logger.info(
+                "Epoch %3d | train_loss=%.4f | val_loss=%.4f | lr=%.6f",
+                epoch, train_metrics["mdn_loss"], val_metrics["mdn_loss"], lr,
             )
 
         log_entry = {
@@ -829,7 +860,7 @@ def main() -> None:
 
         # Generate sample
         if (epoch + 1) % args.sample_every == 0 or epoch == start_epoch:
-            print(f"  Generating sample at epoch {epoch}...")
+            logger.info("  Generating sample at epoch %d...", epoch)
 
             if args.conditioned:
                 text = args.condition_text
@@ -854,7 +885,8 @@ def main() -> None:
             fig_path = samples_dir / f"epoch_{epoch:04d}.png"
             fig.savefig(fig_path, dpi=150)
             plt.close(fig)
-            print(f"  Saved {fig_path}")
+            writer.add_figure("Samples/Handwriting", fig, epoch)
+            logger.info("  Saved %s", fig_path)
 
         # Checkpoint
         is_best = val_total < best_val
@@ -889,11 +921,23 @@ def main() -> None:
 
         # Early stopping check
         if args.early_stopping_patience > 0 and patience_counter >= args.early_stopping_patience:
-            print(f"\nEarly stopping triggered at epoch {epoch} (best val at epoch {best_val_epoch})")
+            logger.info("\nEarly stopping triggered at epoch %d (best val at epoch %d)", epoch, best_val_epoch)
             break
 
-    print(f"\nTraining complete. Best val total loss: {best_val:.4f} at epoch {best_val_epoch}")
+    writer.close()
+    logger.info("\nTraining complete. Best val total loss: %.4f at epoch %d", best_val, best_val_epoch)
+
+
+def setup_logging(verbose: bool = False) -> None:
+    """Configure logging for the training script."""
+    level = logging.DEBUG if verbose else logging.INFO
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
 
 
 if __name__ == "__main__":
+    setup_logging()
     main()
