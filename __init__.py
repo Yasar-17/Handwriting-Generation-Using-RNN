@@ -36,6 +36,15 @@ from .augmentations import (
     get_strong_augmentation,
     AugmentedStrokeDataset,
 )
+from .render import (
+    RenderTheme,
+    THEMES,
+    render_strokes_svg,
+    render_strokes_themed,
+    render_multi_sample,
+    save_svg,
+    render_comparison_grid,
+)
 
 __all__ = [
     "CharVocab",
@@ -68,4 +77,11 @@ __all__ = [
     "get_default_augmentation",
     "get_strong_augmentation",
     "AugmentedStrokeDataset",
+    "RenderTheme",
+    "THEMES",
+    "render_strokes_svg",
+    "render_strokes_themed",
+    "render_multi_sample",
+    "save_svg",
+    "render_comparison_grid",
 ]
