@@ -1,4 +1,4 @@
-.PHONY: help install test verify sanity train train-conditioned train-gan inference export docker-build docker-run clean
+.PHONY: help install test verify sanity train train-conditioned train-gan inference export docker-build docker-run api demo lint typecheck clean
 
 help:
 	@echo "Available commands:"
@@ -89,6 +89,18 @@ docker-run:
 
 tensorboard:
 	tensorboard --logdir ./output/tensorboard --port 6006
+
+api:
+	uvicorn api:app --host 0.0.0.0 --port 8000 --reload
+
+demo:
+	python app.py
+
+lint:
+	ruff check .
+
+typecheck:
+	mypy --config-file pyproject.toml data.py models.py losses.py
 
 clean:
 	rm -rf __pycache__ */__pycache__
