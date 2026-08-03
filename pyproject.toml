@@ -69,3 +69,24 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+extend-exclude = ["__pycache__", "*.egg-info", "output*", "sanity_output", "synthetic_data"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "SIM", "RUF"]
+ignore = ["E501", "B008", "N802", "N806", "SIM108"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["N", "B"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+check_untyped_defs = true
+ignore_missing_imports = true
+exclude = ["tests/", "output/", "output_conditioned/", "sanity_output/", "__pycache__/"]

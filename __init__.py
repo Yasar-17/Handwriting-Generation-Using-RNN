@@ -1,14 +1,6 @@
-"""Handwriting generation with a Mixture-Density RNN and optional GAN refinement.
+"""Handwriting generation with a Mixture-Density RNN and optional GAN refinement."""
 
-This package implements Alex Graves' "Generating Sequences With Recurrent
-Neural Networks" approach: an LSTM outputs the parameters of a mixture of
-bivariate Gaussions over pen displacements plus a Bernoulli pen-lift term,
-and (optionally) attends over a character sequence via soft monotonic
-windowed attention for text-conditioned synthesis. A 1D-CNN sequence
-discriminator can be trained adversarially to sharpen the strokes.
-"""
-
-from .data import (
+from data import (
     CharVocab,
     IAMStrokeDataset,
     IAMConditionedDataset,
@@ -21,9 +13,9 @@ from .data import (
     prepare_splits,
     render_strokes,
 )
-from .losses import MDNLoss, mdn_loss, mdn_mixture_mean, adversarial_loss
-from .models import MDNRNN, MDNRNNConditioned, SequenceDiscriminator, WindowedAttention
-from .augmentations import (
+from losses import MDNLoss, mdn_loss, mdn_mixture_mean, adversarial_loss
+from models import MDNRNN, MDNRNNConditioned, SequenceDiscriminator, WindowedAttention
+from augmentations import (
     StrokeAugmentation,
     RandomScale,
     RandomRotation,
@@ -36,7 +28,7 @@ from .augmentations import (
     get_strong_augmentation,
     AugmentedStrokeDataset,
 )
-from .render import (
+from render import (
     RenderTheme,
     THEMES,
     render_strokes_svg,

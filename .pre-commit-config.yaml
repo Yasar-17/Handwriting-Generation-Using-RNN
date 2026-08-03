@@ -9,7 +9,9 @@ repos:
       - id: check-merge-conflict
       - id: debug-statements
 
-  - repo: https://github.com/pycflake/pyflakes
-    rev: 3.2.0
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.4.4
     hooks:
-      - id: pyflakes
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
