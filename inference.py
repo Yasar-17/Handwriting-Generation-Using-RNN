@@ -31,6 +31,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from data import CharVocab, denormalize_deltas, render_strokes
 from models import MDNRNN, MDNRNNConditioned
+from render_animation import render_handwriting_gif
 
 logger = logging.getLogger(__name__)
 
@@ -190,6 +191,9 @@ def main() -> None:
     parser.add_argument("--num_samples", type=int, default=1, help="Samples per text")
     parser.add_argument("--max_seq_len", type=int, default=1000, help="Maximum sequence length")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
+    parser.add_argument("--gif", action="store_true", help="Also render an animated drawing GIF per sample")
+    parser.add_argument("--gif_fps", type=int, default=15, help="GIF playback frames per second")
+    parser.add_argument("--gif_step", type=int, default=2, help="Points revealed per GIF frame")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose logging")
     args = parser.parse_args()
 
@@ -226,6 +230,17 @@ def main() -> None:
             fig.savefig(fig_path, dpi=150)
             plt.close(fig)
             logger.info("Saved %s", fig_path)
+
+            if args.gif:
+                gif_path = output_dir / f"{safe_text}_sample{i + 1}.gif"
+                render_handwriting_gif(
+                    deltas,
+                    gif_path,
+                    title=title,
+                    fps=args.gif_fps,
+                    step=args.gif_step,
+                )
+                logger.info("Saved %s", gif_path)
 
     logger.info("Done. Generated %d images in %s", len(args.text) * args.num_samples, output_dir)
 

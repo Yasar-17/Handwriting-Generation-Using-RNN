@@ -37,6 +37,11 @@ from render import (
     save_svg,
     render_comparison_grid,
 )
+from render_animation import (
+    build_draw_frames,
+    render_handwriting_gif,
+    render_multi_sample_gif,
+)
 
 __all__ = [
     "CharVocab",
@@ -76,4 +81,7 @@ __all__ = [
     "render_multi_sample",
     "save_svg",
     "render_comparison_grid",
+    "build_draw_frames",
+    "render_handwriting_gif",
+    "render_multi_sample_gif",
 ]
