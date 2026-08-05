@@ -40,6 +40,8 @@ sampling:
   sample_every: 5
   sample_len: 800
   temperature: 0.5
+  top_k: 0
+  top_p: 1.0
   condition_text: "the quick brown fox"
 
 output:

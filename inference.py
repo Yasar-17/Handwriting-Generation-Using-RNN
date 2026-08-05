@@ -22,6 +22,7 @@ import sys
 from pathlib import Path
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
@@ -32,6 +33,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from data import CharVocab, denormalize_deltas, render_strokes
 from models import MDNRNN, MDNRNNConditioned
 from render_animation import render_handwriting_gif
+from sampling import sample_mixture_component
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +99,8 @@ def sample_from_model(
     text: str,
     stats: dict,
     temperature: float = 0.5,
+    top_k: int = 0,
+    top_p: float = 1.0,
     max_seq_len: int = 1000,
     device: torch.device | None = None,
 ) -> np.ndarray:
@@ -123,9 +127,12 @@ def sample_from_model(
         for _ in range(max_seq_len):
             params, hidden, _ = model(x, char_tensor, char_mask, hidden, chunk_size=1)
 
-            pi = params["pi"][0, 0] / temperature
-            pi = torch.softmax(pi, dim=0)
-            component = torch.multinomial(pi, 1).item()
+            component = sample_mixture_component(
+                params["pi"][0, 0].cpu().numpy(),
+                temperature=temperature,
+                top_k=top_k,
+                top_p=top_p,
+            )
 
             mx = params["mu_x"][0, 0, component].item()
             my = params["mu_y"][0, 0, component].item()
@@ -155,9 +162,12 @@ def sample_from_model(
         for _ in range(max_seq_len):
             params, hidden = model(x, hidden)
 
-            pi = params["pi"][0, 0] / temperature
-            pi = torch.softmax(pi, dim=0)
-            component = torch.multinomial(pi, 1).item()
+            component = sample_mixture_component(
+                params["pi"][0, 0].cpu().numpy(),
+                temperature=temperature,
+                top_k=top_k,
+                top_p=top_p,
+            )
 
             mx = params["mu_x"][0, 0, component].item()
             my = params["mu_y"][0, 0, component].item()
@@ -188,6 +198,8 @@ def main() -> None:
     parser.add_argument("--text", type=str, nargs="+", required=True, help="Text(s) to generate")
     parser.add_argument("--output_dir", type=str, default="./generated", help="Output directory")
     parser.add_argument("--temperature", type=float, default=0.5, help="Sampling temperature")
+    parser.add_argument("--top_k", type=int, default=0, help="Top-k sampling (0 = disabled)")
+    parser.add_argument("--top_p", type=float, default=1.0, help="Top-p nucleus sampling (1.0 = disabled)")
     parser.add_argument("--num_samples", type=int, default=1, help="Samples per text")
     parser.add_argument("--max_seq_len", type=int, default=1000, help="Maximum sequence length")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
@@ -219,6 +231,8 @@ def main() -> None:
             deltas = sample_from_model(
                 model, ckpt, text, stats,
                 temperature=args.temperature,
+                top_k=args.top_k,
+                top_p=args.top_p,
                 max_seq_len=args.max_seq_len,
                 device=device,
             )

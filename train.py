@@ -38,6 +38,7 @@ from data import (
 from ema import ModelEMA
 from losses import MDNLoss, adversarial_loss, gradient_penalty, mdn_mixture_mean
 from models import MDNRNN, MDNRNNConditioned, SequenceDiscriminator
+from sampling import sample_mixture_component
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,8 @@ def sample_unconditional(
     model: MDNRNN,
     seq_len: int = 500,
     temperature: float = 0.5,
+    top_k: int = 0,
+    top_p: float = 1.0,
     device: torch.device | None = None,
 ) -> np.ndarray:
     """Generate a stroke sequence autoregressively from the unconditional MDN-RNN."""
@@ -65,23 +68,19 @@ def sample_unconditional(
     for _ in range(seq_len):
         params, hidden = model(x, hidden)
 
-        pi = params["pi"][0, 0]
-        mu_x = params["mu_x"][0, 0]
-        mu_y = params["mu_y"][0, 0]
-        sigma_x = params["sigma_x"][0, 0]
-        sigma_y = params["sigma_y"][0, 0]
-        rho = params["rho"][0, 0]
+        component = sample_mixture_component(
+            params["pi"][0, 0].cpu().numpy(),
+            temperature=temperature,
+            top_k=top_k,
+            top_p=top_p,
+        )
+
+        mx = params["mu_x"][0, 0, component].item()
+        my = params["mu_y"][0, 0, component].item()
+        sx = max(params["sigma_x"][0, 0, component].item() * temperature, 1e-6)
+        sy = max(params["sigma_y"][0, 0, component].item() * temperature, 1e-6)
+        r = params["rho"][0, 0, component].item()
         pen_prob = params["pen_up"][0, 0].item()
-
-        pi = pi / temperature
-        pi = torch.softmax(pi, dim=0)
-        component = torch.multinomial(pi, 1).item()
-
-        mx = mu_x[component].item()
-        my = mu_y[component].item()
-        sx = max(sigma_x[component].item() * temperature, 1e-6)
-        sy = max(sigma_y[component].item() * temperature, 1e-6)
-        r = rho[component].item()
 
         z1 = np.random.randn()
         z2 = np.random.randn()
@@ -110,6 +109,8 @@ def sample_conditioned(
     text: str,
     vocab: CharVocab,
     temperature: float = 0.5,
+    top_k: int = 0,
+    top_p: float = 1.0,
     max_seq_len: int = 1000,
     device: torch.device | None = None,
 ) -> np.ndarray:
@@ -135,23 +136,19 @@ def sample_conditioned(
     for _step in range(max_seq_len):
         params, hidden, _ = model(x, char_tensor, char_mask, hidden, chunk_size=1)
 
-        pi = params["pi"][0, 0]
-        mu_x = params["mu_x"][0, 0]
-        mu_y = params["mu_y"][0, 0]
-        sigma_x = params["sigma_x"][0, 0]
-        sigma_y = params["sigma_y"][0, 0]
-        rho = params["rho"][0, 0]
+        component = sample_mixture_component(
+            params["pi"][0, 0].cpu().numpy(),
+            temperature=temperature,
+            top_k=top_k,
+            top_p=top_p,
+        )
+
+        mx = params["mu_x"][0, 0, component].item()
+        my = params["mu_y"][0, 0, component].item()
+        sx = max(params["sigma_x"][0, 0, component].item() * temperature, 1e-6)
+        sy = max(params["sigma_y"][0, 0, component].item() * temperature, 1e-6)
+        r = params["rho"][0, 0, component].item()
         pen_prob = params["pen_up"][0, 0].item()
-
-        pi = pi / temperature
-        pi = torch.softmax(pi, dim=0)
-        component = torch.multinomial(pi, 1).item()
-
-        mx = mu_x[component].item()
-        my = mu_y[component].item()
-        sx = max(sigma_x[component].item() * temperature, 1e-6)
-        sy = max(sigma_y[component].item() * temperature, 1e-6)
-        r = rho[component].item()
 
         z1 = np.random.randn()
         z2 = np.random.randn()
@@ -688,6 +685,8 @@ def main() -> None:
     parser.add_argument("--sample_every", type=int, default=5, help="Generate sample every N epochs")
     parser.add_argument("--sample_len", type=int, default=800, help="Timesteps per generated sample")
     parser.add_argument("--temperature", type=float, default=0.5, help="Sampling temperature")
+    parser.add_argument("--top_k", type=int, default=0, help="Top-k sampling: keep only the k most probable mixture components (0 = disabled)")
+    parser.add_argument("--top_p", type=float, default=1.0, help="Top-p (nucleus) sampling: keep components up to cumulative probability p (1.0 = disabled)")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--resume", type=str, default=None, help="Path to checkpoint to resume from")
     parser.add_argument("--use_gan", action="store_true", help="Enable adversarial training with sequence discriminator")
@@ -985,6 +984,8 @@ def main() -> None:
                 deltas = sample_conditioned(
                     sample_model, text, vocab,
                     temperature=args.temperature,
+                    top_k=args.top_k,
+                    top_p=args.top_p,
                     max_seq_len=args.sample_len,
                     device=device,
                 )
@@ -994,6 +995,8 @@ def main() -> None:
                     sample_model,
                     seq_len=args.sample_len,
                     temperature=args.temperature,
+                    top_k=args.top_k,
+                    top_p=args.top_p,
                     device=device,
                 )
                 title = f"Epoch {epoch} (T={args.temperature})"
