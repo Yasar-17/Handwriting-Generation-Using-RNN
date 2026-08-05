@@ -6,83 +6,71 @@
 ![Status](https://img.shields.io/badge/status-active-success.svg)
 ![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)
 
-A PyTorch implementation of **online (stroke‑based) handwriting synthesis** that combines a
-**Mixture‑Density Recurrent Neural Network** (Mixture‑Density Network + LSTM) with optional
-**Generative Adversarial refinement**, following Alex Graves' seminal paper
-*"Generating Sequences With Recurrent Neural Networks"* (Graves, 2013).
+This project writes text in **handwriting**. It uses a special neural network called
+a **Mixture-Density RNN** (MDN-RNN) to predict the pen's movement, one small step at a
+time. It can also use a **GAN** to make the strokes look more real.
 
-The model learns to predict the pen's incremental `(Δx, Δy)` displacement and a binary
-`pen_up` (pen‑lift) signal, autoregressively, by emitting the parameters of a *mixture of
-bivariate Gaussians* plus a *Bernoulli* term. A second mode of operation uses monotonic
-**windowed soft attention** over a character embedding sequence so the strokes can be
-**conditioned on arbitrary input text**. An optional 1D‑CNN **discriminator** is trained
-adversarially against the generator to make the synthesized strokes sharper and more
-human‑like.
+The method follows the famous paper *"Generating Sequences With Recurrent Neural
+Networks"* by Alex Graves (2013).
 
-> **Online** handwriting means pen trajectories (sequence of points), as opposed to *offline*
-> handwriting, which is just a static image. The output here is a sequence of pen movements,
-> which is then rendered to an image for visualization.
+> Handwriting is stored as a **sequence of points** (x, y moves + pen up/down), not as
+> an image. The model predicts these points, and we draw them later to make a picture.
 
 ---
 
 ## What's New
 
-This project has been enhanced with several production-ready features:
+This project has been improved with production-ready features:
 
-- **Mixed Precision Training** - Enable with `--use_amp` for faster training on GPU with minimal memory usage
-- **Gradient Accumulation** - Train with larger effective batch sizes using `--grad_accum_steps`
-- **Learning Rate Warmup** - Smooth training start with configurable warmup epochs
-- **Cosine Annealing Scheduler** - Alternative LR schedule for better convergence
-- **Early Stopping** - Automatically stop training when validation loss plateaus
-- **Training Loss Visualization** - Automatic generation of loss plots during training
-- **TensorBoard Integration** - Real-time experiment tracking with metrics and sample visualization
-- **Structured Logging** - Production-grade logging with timestamps and severity levels
-- **Model Export** - Export to TorchScript or ONNX for deployment
-- **Data Augmentation** - Stroke-level augmentations (scale, rotation, noise, time warping)
-- **Production Inference CLI** - Clean CLI for batch handwriting generation
-- **Docker Support** - Containerized environment for reproducible runs
-- **CI/CD Pipeline** - GitHub Actions for automated testing across Python versions
-- **Makefile** - One-command operations for common workflows
-- **Comprehensive Test Suite** - Full pytest coverage for all components
+- **Mixed Precision Training** (`--use_amp`) — faster training on GPU, less memory.
+- **Gradient Accumulation** (`--grad_accum_steps`) — simulate a bigger batch size.
+- **Learning Rate Warmup** — smooth training start.
+- **Cosine Annealing** — better learning-rate schedule.
+- **Early Stopping** — stop when validation loss stops improving.
+- **GAN gradient penalty (WGAN-GP)** (`--grad_penalty_weight`) — keeps the
+  discriminator stable so adversarial training does not collapse.
+- **Exponential Moving Average (EMA)** (`--use_ema`) — keeps a smoothed copy of the
+  generator weights for higher-quality, more stable samples.
+- **Top-k / Top-p (nucleus) sampling** (`--top_k`, `--top_p`) — modern decoding
+  control for cleaner or more varied strokes.
+- **YAML config files** (`--config config.yaml`) — run reproducible training runs
+  from a single file.
+- **TensorBoard** — watch training live in your browser.
+- **Data Augmentation** — scale, rotate, add noise, warp time.
+- **Inference CLI** — generate handwriting from the terminal.
+- **GIF animation** — render the pen drawing the text.
+- **SVG export + themes** — save strokes as SVG in multiple styles.
+- **Docker + CI/CD + Makefile** — containerized, tested, one-command workflows.
+- **Test suite** — full pytest coverage.
 
 ---
 
 ## Results Gallery
 
-The rendered samples below are committed in the repository (under `output/samples/` and
-`output_conditioned/samples/`) and show how the strokes improve as training progresses.
-They were produced on the bundled **synthetic IAM‑style data** — enough to demonstrate that
-the full pipeline learns, with the negative log‑likelihood decreasing steadily for both
-modes (see the [Results](#results) section for the numbers).
+The sample images below are saved in this repository (under `output/samples/` and
+`output_conditioned/samples/`). They show how strokes improve during training.
 
-### Unconditional MDN‑RNN (free‑form stroke synthesis)
+### Unconditional model (free-form strokes)
 
-| Epoch 0 (random / barely structured) | Epoch 24 (coherent strokes) |
+| Epoch 0 (random) | Epoch 24 (coherent) |
 |---|---|
 | ![uncond-epoch0](output/samples/epoch_0000.png) | ![uncond-epoch24](output/samples/epoch_0024.png) |
 
-### Conditioned MDN‑RNN with windowed attention
+### Text-conditioned model (writes the given text)
 
-The conditioned model is asked to write a fixed string (`"the quick brown fox"` during
-training). Early epochs produce wobbly, misaligned strokes; later epochs start to follow
-the conditioning more closely.
-
-| Epoch 0 (informal jitter) | Epoch 9 (beginning of structure) |
+| Epoch 0 (wobbly) | Epoch 9 (structured) |
 |---|---|
 | ![cond-epoch0](output_conditioned/samples/epoch_0000.png) | ![cond-epoch9](output_conditioned/samples/epoch_0009.png) |
 
-> Train on the **real IAM‑OnDB** dataset to obtain human‑legible handwriting; the synthetic
-> data only validates that every component (attention, MDN, masking, rendering) learns
-> end‑to‑end.
+> For clear, human-readable handwriting, train on the **real IAM-OnDB** dataset. The
+> bundled synthetic data is only used to prove that the whole pipeline learns.
 
 ---
 
 ## Table of Contents
 
-- [Highlights](#highlights)
-- [Results Gallery](#results-gallery)
-- [Architecture](#architecture)
-- [Repository Layout](#repository-layout)
+- [How It Works](#how-it-works)
+- [Project Layout](#project-layout)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [Data](#data)
@@ -90,160 +78,97 @@ the conditioning more closely.
 - [Sampling / Inference](#sampling--inference)
 - [Evaluation](#evaluation)
 - [Results](#results)
-- [How the Adversarial (GAN) Component Works](#how-the-adversarial-gan-component-works)
-- [Configuration Cheatsheet](#configuration-cheatsheet)
-- [Reproducibility & Notes](#reproducibility--notes)
+- [Configuration Files](#configuration-files)
+- [Docker & CI/CD](#docker--cicd)
+- [Model Export](#model-export)
+- [Running Tests](#running-tests)
 - [License](#license)
 - [References](#references)
 
 ---
 
-## Highlights
+## How It Works
 
-- **Mixture‑Density Network (MDN) output** — instead of regressing a single `(Δx, Δy)`, the
-  LSTM predicts `M` bivariate Gaussian components (means, std devs, correlation) plus mixture
-  weights, and a Bernoulli `pen_up` logit. This naturally captures the *multi‑modality* of
-  handwriting (the same context can lead to several plausible strokes).
-- **Numerically stable loss** — `log‑sum‑exp` over mixture components; std devs are
-  `exp`‑activated, correlation is `tanh`‑activated, and the log‑likelihood is computed in
-  log space to avoid underflow.
-- **Text‑conditioned synthesis** with **monotonic windowed attention** (Graves 2013): `K`
-  Gaussians slide forward over a character sequence as the stroke is generated, so the model
-  learns to align pen strokes to characters *without any alignment supervision*.
-- **Optional GAN refinement** — a 1D‑CNN **sequence discriminator** classifies real vs.
-  generated stroke sequences; the generator is pushed to fool it via a differentiable
-  *expected* stroke (pi‑weighted mixture mean), keeping the adversarial gradient flowing into
-  the MDN.
-- **Two training modes**:
-  - `unconditional` — learns the distribution of strokes and samples free‑form handwriting.
-  - `conditioned` — learns to write specific text.
-- **Complete pipeline** — XML parsing, normalization, masked batching, training, checkpointing,
-  sample rendering, NLL evaluation, and a one‑call `generate_handwriting(text)` demo API.
+The model reads one step of pen movement `(dx, dy, pen_up)` and predicts the next one.
+Instead of a single answer, it outputs a **mixture** of many possible next moves. This
+captures the fact that handwriting is not fixed — the same word can be written in many
+ways.
 
----
+The model outputs:
 
-## Architecture
+| Output | Meaning |
+|---|---|
+| `mu_x`, `mu_y` | the center of each possible move |
+| `sigma_x`, `sigma_y` | how spread out each move is |
+| `rho` | how x and y moves relate |
+| `pi` | how likely each possible move is |
+| `pen_up` | probability the pen lifts |
 
-### Unconditional MDN‑RNN
+The loss is the **negative log-likelihood** of the true next move under this mixture,
+plus the loss for the pen-lift prediction. All math is done in log space, so it is
+numerically stable.
 
-```
-        ┌──────────────────────────────────────┐
-input   │  3‑layer LSTM (dropout between layers) │   hidden states
-(Δx,Δy,pen_up) ─► │  hidden_dim = 256                │ ──► shared
-        └─────────────┬────────────────────┘         features
-                      │
-          ┌───────────┴────────────┐
-          ▼                        ▼
-   MDN head (Linear)        Pen head (Linear)
-   → M×6 params             → 1 Bernoulli logit
-   (μx,μy,σx,σy,ρ,π)        → pen_up probability
-```
+### Two training modes
 
-At each timestep the network outputs:
+- **Unconditional** — learns the general shape of strokes and draws free-form.
+- **Conditioned** — learns to write specific text using windowed attention. The model
+  looks at the characters while it writes and moves its attention forward one word at a
+  time (monotonic attention).
 
-| Output | Shape | Activation | Meaning |
-|--------|-------|------------|---------|
-| `mu_x`, `mu_y` | `(B, T, M)` | linear | Gaussian means per component |
-| `sigma_x`, `sigma_y` | `(B, T, M)` | `exp` | std devs (always > 0) |
-| `rho` | `(B, T, M)` | `tanh` | correlation in `(−1, 1)` |
-| `pi` | `(B, T, M)` | `softmax` | mixture weights (sum to 1) |
-| `pen_up` | `(B, T)` | `sigmoid` | probability of pen lift |
+### The GAN part (optional)
 
-The loss is the **negative log‑likelihood** of the ground‑truth `(Δx, Δy)` under the mixture
-of `M` bivariate Gaussians, plus the binary cross‑entropy of `pen_up`.
-
-### Conditioned MDN‑RNN with Windowed Attention
-
-The LSTM input at timestep `t` is the concatenation of the stroke features and an attention
-*context* vector computed from the previous LSTM state:
-
-```
-                 ┌──────── character embeddings (B, C, E) ────────┐
-                 │                                                 │
-                 │   K sliding Gaussians (α, β, κ̂)                 │
-                 │   κ_t = κ_{t-1} + exp(κ̂_t)   (monotonic)         │
-                 │   φ_t(u) = Σ_k α_k · exp(−β_k (κ_t − u)²)       │
-                 │   context_t = Σ_u φ_t(u) · char_emb_u            │
-                 ▼                                                 │
-stroke (Δx,Δy,pen_up) ──► concat ──► LSTM ──► MDN params + pen_up  │
-                          ▲                                │       │
-                          └──────── context_t ◄── attention(lstm_out_{t-1}, char_emb)
-```
-
-Because the attention context at step `t` depends on the LSTM output at step `t−1` and is *itself*
-an input to the LSTM at step `t`, the conditioned model is unrolled **one timestep at a time** —
-this recurrent coupling cannot be expressed by a single batched LSTM call.
-
-### Sequence Discriminator (GAN)
-
-A stack of **strided 1D convolutions** with LeakyReLU downsamples the temporal axis, followed by
-global average pooling and a small MLP classifier that outputs a real/fake probability. It is
-trained with binary cross‑entropy and the generator receives an adversarial gradient through a
-*differentiable* expected stroke `Σ_m π_m · (μx, μy)` (no non‑differentiable sampling needed).
+A small 1D-CNN called a **discriminator** tries to tell real strokes from generated
+strokes. The generator (the MDN-RNN) is pushed to fool it. This makes the strokes
+sharper. The whole GAN is optional — just add `--use_gan`.
 
 ---
 
-## Repository Layout
+## Project Layout
 
 ```
 Handwriting Generation using RNN + GAN/
-├── data.py                       # IAM XML parsing, normalization, datasets, rendering
-├── models.py                     # MDNRNN, MDNRNNConditioned, WindowedAttention, SequenceDiscriminator
-├── losses.py                     # MDN NLL, mixture-mean helper, adversarial BCE losses
-├── train.py                      # Training loop (unconditional & conditioned), sampling, ckpts
-├── eval.py                       # NLL eval, pre/post-adversarial comparison, demo API
-├── inference.py                  # Production inference CLI for handwriting generation
-├── generate_synthetic_data.py    # Generate fake IAM-style XML when no real data is available
-├── sanity_check.py               # End-to-end pipeline smoke test (parse→norm→render→denorm)
-├── verify_model.py               # Shape / numerical-stability checks for MDN + GAN
-├── export_model.py               # Export models to TorchScript and ONNX formats
-├── augmentations.py              # Stroke-level data augmentation transforms
-├── __init__.py                   # Package exports
+├── data.py                       # Read IAM XML, normalize, batch, render
+├── models.py                     # MDNRNN, MDNRNNConditioned, attention, discriminator
+├── losses.py                     # MDN loss, adversarial loss, gradient penalty
+├── ema.py                        # Exponential moving average of model weights
+├── sampling.py                   # Temperature, top-k, top-p sampling helpers
+├── train.py                      # Training loop (both modes) + config file support
+├── eval.py                       # NLL evaluation, comparisons, demo API
+├── inference.py                  # Production inference CLI
+├── generate_synthetic_data.py    # Make fake IAM-style XML data
+├── sanity_check.py               # Quick end-to-end smoke test
+├── verify_model.py               # Shape / stability checks
+├── export_model.py               # Export to TorchScript / ONNX
+├── augmentations.py              # Data augmentation transforms
+├── render.py                     # SVG + multi-theme rendering
+├── render_animation.py           # Animated GIF rendering
+├── metrics.py                    # Stroke-quality metrics
+├── benchmark.py                  # Inference speed / memory benchmarks
+├── api.py                        # FastAPI REST server
+├── app.py                        # Gradio demo
+├── config.yaml                   # Example config file (works with --config)
 ├── requirements.txt
 ├── pyproject.toml
-├── config.yaml                   # Example configuration file
-├── Makefile                      # Common operations shortcuts
-├── Dockerfile                    # Container definition
-├── .dockerignore
-├── .pre-commit-config.yaml       # Pre-commit hooks configuration
+├── Makefile
+├── Dockerfile
 ├── LICENSE
 ├── README.md
-├── .github/
-│   └── workflows/
-│       └── ci.yml                # GitHub Actions CI/CD pipeline
-├── tests/
-│   └── test_pipeline.py          # Comprehensive unit tests
-├── output/                       # Unconditional run: samples, logs, stats, checkpoints
-│   ├── samples/                  # epoch_XXXX.png rendered samples
-│   ├── log.json                  # per-epoch train/val NLL history
-│   ├── stats.json                # normalization stats (mean/std of Δx, Δy)
-│   ├── training_loss.png         # training loss visualization
-│   └── tensorboard/              # TensorBoard event files
+├── .github/workflows/ci.yml      # CI/CD pipeline
+├── tests/                        # pytest tests
+├── output/                       # Unconditional run: samples, logs, stats
 └── output_conditioned/           # Conditioned run: same structure
-    ├── samples/
-    ├── log.json
-    ├── stats.json
-    ├── training_loss.png
-    └── tensorboard/
 ```
-
-> Checkpoints (`*.pt`) and `__pycache__/` are `.gitignore`d — they are regenerated by training.
-> The small `log.json` / `stats.json` files and rendered sample PNGs are kept so the results are
-> viewable directly from the repository.
 
 ---
 
 ## Installation
 
-Requirements: **Python ≥ 3.10** and a CPU or CUDA GPU.
-
-### Option 1: Standard Installation
+You need **Python 3.10 or newer** and a CPU or CUDA GPU.
 
 ```bash
 git clone https://github.com/Yasar-17/Handwriting-Generation-Using-RNN.git
 cd "Handwriting-Generation-Using-RNN"
 
-# (recommended) create a virtual environment
 python -m venv .venv
 # Windows:
 .venv\Scripts\activate
@@ -253,43 +178,38 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### Option 2: Docker
+Or with Docker:
 
 ```bash
 docker build -t handwriting-rnn-gan .
 docker run --rm -v $(pwd)/output:/app/output handwriting-rnn-gan python train.py --help
 ```
 
-### Option 3: Using Make
+Or with Make:
 
 ```bash
-make install    # Install all dependencies
+make install
 ```
 
-To verify everything is wired correctly (shapes, activations, numerical stability, gradients):
+To check everything is wired correctly:
 
 ```bash
-python verify_model.py        # MDN-RNN + discriminator checks
-python sanity_check.py        # data pipeline round-trip check
-pytest tests/                 # run comprehensive test suite
-
-# Or with Make:
-make verify
-make sanity
-make test
+python verify_model.py
+python sanity_check.py
+pytest tests/
 ```
 
 ---
 
 ## Quick Start
 
-The fastest way to see the system produce handwriting without the real IAM dataset:
+The fastest way to see handwriting without downloading anything:
 
 ```bash
-# 1. Generate synthetic IAM-style XML (only needed once, no download required)
+# 1. Generate synthetic IAM-style XML (once)
 python generate_synthetic_data.py --output_dir ./synthetic_data --num_samples 500
 
-# 2. Train the conditioned model for a few epochs (CPU is fine for a quick run)
+# 2. Train the conditioned model for a few epochs (CPU is fine)
 python train.py --conditioned \
     --data_dir ./synthetic_data \
     --output_dir ./output_conditioned \
@@ -298,7 +218,7 @@ python train.py --conditioned \
     --sample_every 2 --temperature 0.5 \
     --condition_text "hello world"
 
-# 3. Render handwriting for arbitrary text from the trained checkpoint
+# 3. Generate handwriting for any text
 python eval.py \
     --data_dir ./synthetic_data \
     --stats_path ./output_conditioned/stats.json \
@@ -307,26 +227,20 @@ python eval.py \
     --temperature 0.5 --output_dir ./eval_output
 ```
 
-Generated images appear in `output_conditioned/samples/` (during training) and
-`eval_output/demo/` (post‑training).
+Images appear in `output_conditioned/samples/` (during training) and
+`eval_output/demo/` (after training).
 
 ---
 
 ## Data
 
-The project reads IAM **On-Line Handwriting** XML files (`<StrokeSet>` / `<Stroke>` /
-`<Point>` with `x`, `y`, `time` attributes and a `<Line text="..."/>` element carrying the
-transcript). The IAM On-Line Handwriting Database was introduced by Graves & Schmidhuber
-(University of Bern); look for "IAM-OnDB" line-level stroke XML files.
+The project reads IAM **On-Line Handwriting** XML files (lines of points with a text
+transcript). You have two options:
 
-### Two ways to get data
-
-1. **Real IAM dataset** — place the line‑level XML files under a directory and pass it with
-   `--data_dir`. The script recurses for `*.xml` and splits 80/10/10 (train/val/test), seeded.
-
-2. **Synthetic data** — run `generate_synthetic_data.py` to create realistic‑looking,
-   IAM‑formatted XML files with embedded transcripts. This is what powers the Quick Start
-   example and lets you train end‑to‑end without downloading anything.
+1. **Real IAM data** — put the line-level XML files in a folder and pass it with
+   `--data_dir`. The script splits it 80/10/10 (train/val/test).
+2. **Synthetic data** — run `generate_synthetic_data.py` to create fake IAM-style XML.
+   No download needed.
 
 ```bash
 python generate_synthetic_data.py --output_dir ./synthetic_data --num_samples 1000 --seed 42
@@ -334,21 +248,18 @@ python generate_synthetic_data.py --output_dir ./synthetic_data --num_samples 10
 
 ### Preprocessing
 
-- Absolute `(x, y, pen_up)` → relative `(Δx, Δy, pen_up)` (the first point is `(0, 0, ...)`).
-- **Z‑score normalization** of `Δx`, `Δy` using *training‑set* statistics (`mean_x`, `std_x`,
-  `mean_y`, `std_y`) saved to `stats.json`. Denormalization reverses this for rendering.
-- **Variable‑length batching** with padding and a boolean mask; the loss is masked so padded
-  steps contribute nothing.
-- **Character vocabulary** (`CharVocab`): printable ASCII + space, with a `0` index reserved
-  for padding. Unknown characters map to `0`.
+- Convert absolute `(x, y, pen_up)` to relative `(dx, dy, pen_up)`.
+- Z-score normalize using training statistics (saved to `stats.json`).
+- Pad variable-length sequences and mask the padded parts in the loss.
+- Encode characters with a simple `CharVocab` (index 0 = padding).
 
 ---
 
 ## Training
 
-`train.py` supports both unconditional and text‑conditioned modes, with or without the GAN.
+`train.py` supports both modes, with or without the GAN.
 
-### Unconditional (free‑form stroke synthesis)
+### Unconditional
 
 ```bash
 python train.py \
@@ -374,67 +285,73 @@ python train.py --conditioned \
     --sample_every 5 --sample_len 1000 --temperature 0.5
 ```
 
-### With GAN refinement
-
-Add `--use_gan` (and optionally tune the discriminator / adversarial weights):
+### With the GAN
 
 ```bash
 python train.py --conditioned --use_gan \
     --data_dir ./synthetic_data --output_dir ./output_conditioned_gan \
     --adv_weight 0.1 --disc_lr 1e-4 \
-    --disc_hidden_dim 128 --disc_num_layers 4 --disc_dropout 0.2 \
-    ... (other args as above)
+    --disc_hidden_dim 128 --disc_num_layers 4 --disc_dropout 0.2
 ```
 
-### Advanced Training Options
+### With a stable GAN (gradient penalty)
 
-#### Mixed Precision Training
+Add a WGAN-GP gradient penalty to stop the discriminator from overpowering the
+generator:
 
-Enable automatic mixed precision (AMP) for faster training on GPU:
+```bash
+python train.py --conditioned --use_gan --grad_penalty_weight 10.0 \
+    --data_dir ./synthetic_data --output_dir ./output_conditioned_gp
+```
+
+A value around **10.0** is typical. `0` disables the penalty.
+
+### With EMA (smoother, higher-quality samples)
+
+EMA keeps a running average of the generator weights and uses them for sampling:
+
+```bash
+python train.py --conditioned --use_ema --ema_decay 0.999 \
+    --data_dir ./synthetic_data --output_dir ./output_conditioned_ema
+```
+
+When EMA is enabled, the best EMA checkpoint is saved as
+`checkpoint_best_ema.pt`. You can load it with `eval.py` / `inference.py` exactly
+like a normal checkpoint.
+
+### Mixed precision
 
 ```bash
 python train.py --conditioned --use_amp \
-    --data_dir ./synthetic_data --output_dir ./output_conditioned_amp \
-    ... (other args as above)
+    --data_dir ./synthetic_data --output_dir ./output_conditioned_amp
 ```
 
-#### Gradient Accumulation
-
-Simulate larger batch sizes when GPU memory is limited:
+### Gradient accumulation
 
 ```bash
 # Effective batch size = 16 * 4 = 64
 python train.py --conditioned \
     --data_dir ./synthetic_data --output_dir ./output_conditioned_accum \
-    --batch_size 16 --grad_accum_steps 4 \
-    ... (other args as above)
+    --batch_size 16 --grad_accum_steps 4
 ```
 
-#### Learning Rate Warmup + Cosine Annealing
-
-Smooth training start and better convergence:
+### Warmup + cosine annealing
 
 ```bash
 python train.py --conditioned \
     --data_dir ./synthetic_data --output_dir ./output_conditioned_warmup \
-    --warmup_epochs 5 --use_cosine_annealing --epochs 50 \
-    ... (other args as above)
+    --warmup_epochs 5 --use_cosine_annealing --epochs 50
 ```
 
-#### Early Stopping
-
-Automatically stop training when validation loss plateaus:
+### Early stopping
 
 ```bash
 python train.py --conditioned \
     --data_dir ./synthetic_data --output_dir ./output_conditioned_es \
-    --early_stopping_patience 10 --epochs 100 \
-    ... (other args as above)
+    --early_stopping_patience 10 --epochs 100
 ```
 
-### Full Production Training Example
-
-Combining all advanced features:
+### Full production example
 
 ```bash
 python train.py --conditioned --use_gan --use_amp \
@@ -442,33 +359,29 @@ python train.py --conditioned --use_gan --use_amp \
     --epochs 100 --batch_size 32 --grad_accum_steps 2 \
     --warmup_epochs 5 --use_cosine_annealing \
     --early_stopping_patience 15 \
+    --grad_penalty_weight 10.0 --use_ema --ema_decay 0.999 \
     --hidden_dim 256 --num_layers 3 --num_mixtures 20 \
     --num_windows 10 --char_embed_dim 32 \
     --condition_text "the quick brown fox jumps over the lazy dog" \
     --sample_every 5 --sample_len 1000 --temperature 0.5 \
+    --top_k 5 --top_p 0.95 \
     --adv_weight 0.1 --disc_lr 1e-4
 ```
 
-### Speeding up conditioned training (`--chunk_size`)
+### Speed up conditioned training (`--chunk_size`)
 
-The conditioned model has a recurrent attention‑feedback dependency that, in its exact form
-(Graves 2013), forces the LSTM to be unrolled one timestep at a time — this dominates CPU
-training time. Passing `--chunk_size N > 1` switches to a **truncated‑BPTT‑style
-approximation**: the attention context is held constant within each *chunk* of `N`
-timesteps and only refreshed between chunks, so the LSTM is invoked `ceil(T / N)` times
-instead of `T` times. The monotonic character‑alignment `κ` is still accumulated across
-chunks, so global alignment remains monotone; only the *per‑step* context is coarsened.
+The conditioned model must be unrolled one step at a time (because of the attention
+feedback). `--chunk_size N` holds the attention context fixed inside each chunk, so
+the LSTM runs `ceil(T / N)` times instead of `T` times. This is a big speedup with
+almost no quality loss:
 
-A micro‑benchmark (CPU, `T=500`, batch 8, 3‑layer LSTM‑256) measuring a forward pass:
-
-| `--chunk_size` | forward time | speedup |
+| `--chunk_size` | forward time (CPU) | speedup |
 |---:|---:|---:|
-| 1 (exact recurrence) | ~1950 ms | 1.0× |
+| 1 (exact) | ~1950 ms | 1.0× |
 | 16 | ~377 ms | ~5.2× |
 | 32 | ~326 ms | ~6.0× |
 
-Sampling (`sample_conditioned`, `eval.py`) always uses `chunk_size=1` for maximum fidelity,
-so this flag is a pure **training** speedup knob — recommended values: **8–32**.
+Sampling always uses `chunk_size=1` for the best quality.
 
 ```bash
 python train.py --conditioned --chunk_size 16 --data_dir ./synthetic_data ...
@@ -476,24 +389,25 @@ python train.py --conditioned --chunk_size 16 --data_dir ./synthetic_data ...
 
 ### Outputs
 
-- `output/checkpoints/checkpoint_epoch_XXXX.pt` — per‑epoch checkpoints.
-- `output/checkpoints/checkpoint_best.pt` — best (lowest validation total loss) so far.
-- `output/samples/epoch_XXXX.png` — rendered generated handwriting every `--sample_every` epochs.
-- `output/log.json` — per‑epoch train/val losses and learning rate.
-- `output/stats.json` — normalization statistics (needed for inference/eval).
+- `output/checkpoints/checkpoint_epoch_XXXX.pt` — per-epoch checkpoints.
+- `output/checkpoints/checkpoint_best.pt` — best validation model.
+- `output/checkpoints/checkpoint_best_ema.pt` — best EMA model (if `--use_ema`).
+- `output/samples/epoch_XXXX.png` — rendered samples.
+- `output/log.json` — per-epoch losses and learning rate.
+- `output/stats.json` — normalization stats (needed for inference).
 
-### Resuming
+### Resume training
 
 ```bash
 python train.py --conditioned --data_dir ./synthetic_data \
-    --output_dir ./output_conditioned --resume ./output_conditioned/checkpoints/checkpoint_best.pt ...
+    --output_dir ./output_conditioned --resume ./output_conditioned/checkpoints/checkpoint_best.pt
 ```
 
 ---
 
 ## Sampling / Inference
 
-`eval.py` exposes a one‑call API for generating handwriting images:
+### Python API
 
 ```python
 from eval import generate_handwriting
@@ -502,12 +416,12 @@ fig = generate_handwriting(
     text="hello world",
     ckpt_path="./output_conditioned/checkpoints/checkpoint_best.pt",
     stats_path="./output_conditioned/stats.json",
-    temperature=0.5,        # lower → more deterministic; higher → more diverse
+    temperature=0.5,
 )
 fig.savefig("hello_world.png")
 ```
 
-Or via the `HandwritingGenerator` class for repeated generation:
+Or use the `HandwritingGenerator` class for repeated use:
 
 ```python
 from eval import HandwritingGenerator
@@ -519,18 +433,33 @@ gen = HandwritingGenerator(
 fig = gen.generate_handwriting("the quick brown fox", temperature=0.5)
 ```
 
-### About the sampling temperature
+### About temperature, top-k and top-p
 
-Sampling picks a mixture component from `softmax(pi / T)` and draws from that bivariate
-Gaussian, with std devs scaled by `T`:
+During sampling the model picks one "next move" from its mixture:
 
-- **`T` small (< 1)** → the most probable mixture component dominates, strokes are crisper and
-  more repetitive.
-- **`T` ≈ 1** → faithful to the learned distribution.
-- **`T` large (> 1)** → flatter mixture weights, more random/varied (and noisier) strokes.
+- **Temperature** — lower (< 1) means crisp and repetitive; higher (> 1) means varied
+  and noisier.
+- **Top-k** (`--top_k N`) — only consider the `N` most likely moves.
+- **Top-p** (`--top_p 0.95`) — only keep moves until their combined chance reaches
+  `p` (nucleus sampling). This removes unlikely "tail" moves and often looks cleaner.
 
-For conditioned generation the loop also stops early when the pen stays lifted for many
-consecutive steps (the model is effectively done writing the text).
+For conditioned generation the loop stops early when the pen stays lifted for many
+steps (the text is finished).
+
+### Inference CLI
+
+```bash
+python inference.py \
+    --ckpt ./output_conditioned/checkpoints/checkpoint_best.pt \
+    --stats ./output_conditioned/stats.json \
+    --text "hello world" "machine learning" \
+    --output_dir ./generated \
+    --temperature 0.5 --num_samples 3 \
+    --top_k 5 --top_p 0.95 \
+    --gif
+```
+
+Add `--gif` to also save an animated drawing GIF per sample.
 
 ---
 
@@ -549,306 +478,108 @@ python eval.py \
 
 This produces:
 
-1. **Validation NLL** — average MDN negative log‑likelihood on the held‑out split (saved to
-   `eval_output/eval_results.json`).
-2. **Pre/post‑adversarial comparison images** in `eval_output/comparisons/` showing samples
-   from the MDN‑only model vs. the GAN‑refined model side by side.
-3. **Demo samples** in `eval_output/demo/` for each requested text.
+1. **Validation NLL** — average MDN negative log-likelihood on held-out data
+   (saved to `eval_output/eval_results.json`).
+2. **Pre/post-GAN comparison images** in `eval_output/comparisons/`.
+3. **Demo samples** in `eval_output/demo/`.
+
+Quantitative stroke-quality metrics (number of strokes, pen-up ratio, smoothness,
+curvature, etc.) live in `metrics.py` and can compare two models or real vs. generated
+data.
 
 ---
 
 ## Results
 
-Training was run for a small number of epochs on synthetic data to validate the full pipeline
-(both unconditional and conditioned). The negative log‑likelihood decreases steadily for both
-models. The plots below were produced from the committed `output/log.json` /
-`output_conditioned/log.json`.
+Training was run for a small number of epochs on synthetic data to validate the full
+pipeline. The negative log-likelihood decreases steadily for both models.
 
-### Unconditional MDN‑RNN val NLL
+### Unconditional val NLL
 
 | Epoch | 0    | 5     | 10    | 15    | 20    | 24    |
 |-------|------|-------|-------|-------|-------|-------|
 | Val NLL | 2.32 | 0.33 | −0.40 | −0.76 | −0.86 | −0.88 |
 
-### Conditioned MDN‑RNN val NLL
+### Conditioned val NLL
 
 | Epoch | 0    | 1    | 2    | 3    | 4    | 9    |
 |-------|------|------|------|------|------|------|
 | Val NLL | 2.01 | 0.47 | −0.13 | −0.33 | −0.44 | −0.84 |
 
-> Note: NLL values are negative because we report the **average log‑likelihood per timestep**
-> (the NLL is reported as a loss when optimizing, but a *higher* log‑likelihood — i.e. *lower*
-> reported number — means the model fits the validation strokes better).
-
-Rendered progression samples (left → earlier epoch, right → later epoch) are kept under
-`output/samples/` and `output_conditioned/samples/` so the improvement over training is visible,
-e.g.:
-
-```
-output_conditioned/samples/epoch_0000.png   # early: noisy, wobbly strokes
-output_conditioned/samples/epoch_0009.png   # late:  more coherent handwriting
-```
+> NLL is reported per timestep, so a **lower** number means the model fits better.
 
 ---
 
-## How the Adversarial (GAN) Component Works
+## Configuration Files
 
-The MDN loss optimizes **log‑likelihood**, which makes the model produce *plausible* strokes
-but can yield samples that are slightly jittery or unrealistic-looking. The GAN component adds
-an adversarial objective to sharpen the output distribution:
+You can put all training settings in a YAML file and pass it with `--config`:
 
-1. **Discriminator** (`SequenceDiscriminator`) — a 1D‑temporal CNN that outputs the probability
-   that a `(B, T, 3)` stroke sequence is *real* (from the dataset).
-2. **Generator** — the MDN‑RNN itself. Its "fake" sequence is the **differentiable expected
-   stroke**: `(Σ_m π_m μx, Σ_m π_m μy, pen_up)`. This avoids the non‑differentiable sampling
-   step so the adversarial gradient flows back into the mixture parameters.
-3. **Training** — each step:
-   - Discriminator update: BCE with real sequences labeled 1 and detached fake sequences labeled 0.
-   - Generator update: MDN NLL + `adv_weight · adversarial_loss`. The adversarial term encourages
-     the expected stroke to look real to the discriminator.
+```bash
+python train.py --config config.yaml
+```
 
-Because the discriminator operates on **stroke sequences** (not images), no differentiable
-renderer is needed. The GAN is entirely optional and can be enabled with `--use_gan`.
+Any command-line flag overrides the matching config value. The example file at
+`config.yaml` covers data, model, training (including `grad_penalty_weight`, EMA,
+AMP, early stopping) and sampling (`top_k`, `top_p`).
 
-### Pre‑ vs. post‑adversarial samples
+Quick reference of the most useful flags:
 
-Running `eval.py` with both `--pre_ckpt` (MDN‑only) and `--post_ckpt` (MDN+GAN) produces side‑by‑side
-comparison figures so the effect of adversarial training is visible directly.
-
----
-
-## Configuration Cheatsheet
-
-| Argument | Default | What it controls |
-|----------|---------|-------------------|
-| `--conditioned` | off | Enable text‑conditioned + attention mode |
+| Argument | Default | What it does |
+|----------|---------|---------------|
+| `--conditioned` | off | Text-conditioned + attention mode |
 | `--hidden_dim` | 256 | LSTM hidden size |
 | `--num_layers` | 3 | LSTM layers |
-| `--num_mixtures` | 20 | M (`M·6` MDN params) |
-| `--num_windows` | 10 | K attention windows (conditioned only) |
-| `--char_embed_dim` | 32 | Character embedding size (conditioned only) |
-| `--dropout` | 0.2 | Dropout between LSTM layers |
+| `--num_mixtures` | 20 | Number of Gaussian components |
+| `--num_windows` | 10 | Attention windows (conditioned only) |
 | `--batch_size` | 64 | Minibatch size |
-| `--epochs` | 50 | Training epochs |
-| `--lr` | 1e‑3 | Generator (MDN‑RNN) learning rate |
-| `--clip_grad` | 5.0 | Max global gradient norm |
+| `--epochs` | 50 | Number of epochs |
+| `--lr` | 1e-3 | Learning rate |
 | `--temperature` | 0.5 | Sampling temperature |
-| `--sample_every` | 5 | Render a sample every N epochs |
-| `--sample_len` | 800 | Timesteps per generated sample |
-| `--condition_text` | "the quick brown fox" | Text sampled during conditioned training |
+| `--top_k` | 0 | Top-k sampling (0 = off) |
+| `--top_p` | 1.0 | Top-p nucleus sampling (1.0 = off) |
 | `--use_gan` | off | Enable adversarial training |
-| `--adv_weight` | 0.1 | Weight of adversarial term in generator loss |
-| `--disc_lr` | 1e‑4 | Discriminator learning rate |
-| `--disc_hidden_dim` | 128 | Discriminator channel base |
-| `--disc_num_layers` | 4 | Conv1D layers in the discriminator |
-| `--chunk_size` | 1 | Conditioned training speedup: LSTM call per chunk of `N` steps (1 = exact recurrence). Sampling always uses 1. |
-| `--seed` | 42 | RNG seed for reproducibility |
-| `--resume` | None | Checkpoint path to resume from |
-| `--grad_accum_steps` | 1 | Number of steps to accumulate gradients |
-| `--use_amp` | off | Enable automatic mixed precision training |
-| `--warmup_epochs` | 5 | Number of warmup epochs for LR scheduler |
-| `--use_cosine_annealing` | off | Use cosine annealing LR scheduler |
-| `--early_stopping_patience` | 0 | Early stopping patience (0 = disabled) |
+| `--adv_weight` | 0.1 | Adversarial loss weight |
+| `--grad_penalty_weight` | 0.0 | WGAN-GP gradient penalty (0 = off) |
+| `--use_ema` | off | Use EMA of generator weights |
+| `--ema_decay` | 0.999 | EMA decay factor |
+| `--use_amp` | off | Mixed precision training |
+| `--grad_accum_steps` | 1 | Gradient accumulation steps |
+| `--warmup_epochs` | 5 | LR warmup epochs |
+| `--use_cosine_annealing` | off | Cosine annealing schedule |
+| `--early_stopping_patience` | 0 | Early stopping (0 = off) |
+| `--chunk_size` | 1 | Conditioned training speedup |
+| `--config` | None | YAML config file |
+| `--seed` | 42 | Random seed |
 
 ---
 
-## Reproducibility & Notes
-
-- All training scripts call `torch.manual_seed(seed)` and `np.random.seed(seed)` so runs are
-  reproducible given the same seed and hardware.
-- The conditioned `forward` runs the LSTM **timestep by timestep** by design (attention feedback),
-  so it is noticeably slower than the unconditional model. For long sequences on CPU, prefer the
-  unconditional model or use a GPU.
-- The discriminator uses a *differentiable* mixture mean — not actual sampling — as the "fake"
-  sample. This keeps the adversarial gradient clean while still providing a sharpening signal.
-- `weights_only=False` is used when loading checkpoints (they contain optimizer/scheduler state,
-  which is not pure tensors). Only load checkpoints you trust.
-
-### Engineered / stabilized details worth noting
-
-- **Bivariate Gaussian log‑prob** computed with `torch.logsumexp` over mixture components to
-  avoid catastrophic underflow with 20 components.
-- **`one_minus_rho²`** is clamped away from zero; std devs are `exp`‑activated (always > 0),
-  correlation is `tanh`‑activated; `pi` is `softmax`‑activated so it sums to 1.
-- **Pen probabilities** are clamped away from `0` and `1` before taking logs in the BCE term.
-- **Monotonic attention** is enforced via cumulative `κ_t = Σ exp(κ̂_t)` so the window cannot
-  move backward through the character sequence.
-- **Masking**: padded timesteps are masked out of the NLL so variable‑length sequences in a
-  batch do not bias the loss.
-
----
-
-## Experiment Tracking with TensorBoard
-
-Monitor training progress in real-time:
+## Docker & CI/CD
 
 ```bash
-# Start TensorBoard server
-tensorboard --logdir ./output/tensorboard --port 6006
-# Open http://localhost:6006 in your browser
-
-# Or with Make:
-make tensorboard
-```
-
-TensorBoard tracks:
-- Training and validation losses (MDN, adversarial, discriminator)
-- Learning rate schedule
-- Generated handwriting samples per epoch
-
-## Data Augmentation
-
-Improve model generalization with stroke-level augmentations:
-
-```python
-from augmentations import (
-    Compose, RandomApply, RandomScale,
-    RandomRotation, GaussianNoise, RandomTimeWarp,
-    AugmentedStrokeDataset, get_default_augmentation,
-)
-
-# Use default augmentation pipeline
-aug = get_default_augmentation()
-
-# Or build custom pipeline
-aug = Compose([
-    RandomApply(RandomScale((0.8, 1.2)), p=0.5),
-    RandomApply(RandomRotation(max_angle=15.0), p=0.5),
-    RandomApply(GaussianNoise(std=0.05), p=0.5),
-    RandomApply(RandomTimeWarp((0.8, 1.2)), p=0.3),
-])
-
-# Wrap your dataset
-augmented_dataset = AugmentedStrokeDataset(base_dataset, augmentation=aug)
-```
-
-Available augmentations:
-| Transform | Description |
-|---|---|
-| `RandomScale` | Scale stroke coordinates |
-| `RandomRotation` | Rotate strokes around origin |
-| `GaussianNoise` | Add noise to delta values |
-| `RandomTimeWarp` | Simulate writing speed variation |
-| `StrokeDropout` | Randomly drop stroke points |
-
-## Production Inference CLI
-
-Generate handwriting with a clean, production-ready interface:
-
-```bash
-# Single text generation
-python inference.py \
-    --ckpt ./output_conditioned/checkpoints/checkpoint_best.pt \
-    --stats ./output_conditioned/stats.json \
-    --text "hello world" \
-    --output_dir ./generated \
-    --temperature 0.5
-
-# Batch generation with multiple samples
-python inference.py \
-    --ckpt ./output_conditioned/checkpoints/checkpoint_best.pt \
-    --stats ./output_conditioned/stats.json \
-    --text "hello world" "the quick brown fox" "machine learning" \
-    --output_dir ./generated \
-    --temperature 0.5 --num_samples 3
-
-# Or with Make:
-make inference
-```
-
-## Docker & Containerization
-
-Run the project in an isolated, reproducible environment:
-
-```bash
-# Build image
 make docker-build
-
-# Run training inside container
-docker run --rm -v $(pwd)/output:/app/output handwriting-rnn-gan \
-    python train.py --data_dir ./synthetic_data --output_dir ./output --epochs 10
-
-# Or with Make:
 make docker-run
 ```
 
-## CI/CD Pipeline
+The GitHub Actions workflow (`.github/workflows/ci.yml`) runs on Python 3.10, 3.11 and
+3.12: linting, model verification, sanity checks, the full pytest suite, and a Docker
+build.
 
-This project uses GitHub Actions for automated testing:
-
-- **Tests run on**: Python 3.10, 3.11, 3.12
-- **Triggers**: Push to main, Pull Requests
-- **Checks**: Model verification, sanity checks, pytest suite
-- **Docker build**: Validates containerization
-
-Workflow config: `.github/workflows/ci.yml`
-
-## Makefile Commands
-
-Quick reference for common operations:
-
-```bash
-make install              # Install dependencies
-make test                 # Run all tests
-make verify               # Model verification
-make sanity               # Data pipeline check
-make generate-data        # Create synthetic data
-make train                # Train unconditional model
-make train-conditioned    # Train conditioned model (recommended)
-make train-gan            # Train with GAN + AMP + early stopping
-make inference            # Generate handwriting samples
-make export               # Export to TorchScript + ONNX
-make tensorboard          # Launch TensorBoard
-make docker-build         # Build Docker image
-make clean                # Remove generated files
-```
+---
 
 ## Model Export
 
-Export trained models to optimized formats for deployment:
-
-### TorchScript Export
-
 ```bash
-python export_model.py \
-    --ckpt_path ./output_conditioned/checkpoints/checkpoint_best.pt \
-    --output_dir ./exported_model \
-    --format torchscript
-```
+# TorchScript
+python export_model.py --ckpt_path ./output_conditioned/checkpoints/checkpoint_best.pt \
+    --output_dir ./exported_model --format torchscript
 
-### ONNX Export
+# ONNX
+python export_model.py --ckpt_path ./output_conditioned/checkpoints/checkpoint_best.pt \
+    --output_dir ./exported_model --stats_path ./output_conditioned/stats.json --format onnx
 
-```bash
-python export_model.py \
-    --ckpt_path ./output_conditioned/checkpoints/checkpoint_best.pt \
-    --output_dir ./exported_model \
-    --stats_path ./output_conditioned/stats.json \
-    --format onnx
-```
-
-### Export Both Formats
-
-```bash
-python export_model.py \
-    --ckpt_path ./output_conditioned/checkpoints/checkpoint_best.pt \
-    --output_dir ./exported_model \
-    --stats_path ./output_conditioned/stats.json \
-    --format both
-```
-
-### Using Exported Models in Python
-
-```python
-import torch
-
-# Load TorchScript model
-model = torch.jit.load("./exported_model/model.torchscript.pt")
-model.eval()
-
-# Run inference
-strokes = torch.randn(1, 100, 3)  # (batch, seq_len, 3)
-hidden = model.init_hidden(1)
-params, _ = model(strokes, hidden)
+# Both
+python export_model.py --ckpt_path ./output_conditioned/checkpoints/checkpoint_best.pt \
+    --output_dir ./exported_model --stats_path ./output_conditioned/stats.json --format both
 ```
 
 ---
@@ -856,30 +587,13 @@ params, _ = model(strokes, hidden)
 ## Running Tests
 
 ```bash
-# Run all tests
 pytest tests/ -v
 
-# Run with coverage
+# With coverage
 pytest tests/ -v --cov=.
-
-# Run specific test class
-pytest tests/test_pipeline.py::TestMDNRNN -v
-
-# Or with Make:
-make test
 ```
 
-## Pre-commit Hooks
-
-Ensure code quality before committing:
-
-```bash
-pip install pre-commit
-pre-commit install
-pre-commit run --all-files
-```
-
-Hooks include: trailing whitespace removal, EOF fixer, YAML validation, large file detection, and debug statement detection.
+Or with Make: `make test`.
 
 ---
 
@@ -891,8 +605,10 @@ This project is released under the [MIT License](./LICENSE).
 
 ## References
 
-- Alex Graves. **"Generating Sequences With Recurrent Neural Networks."** *Neural Computation*,
-  2013. — the original formulation of the MDN‑RNN + windowed attention handwriting model.
-- IAM On-Line Handwriting Database: A. Graves & J. Schmidhuber, *IAM-OnDB*, University of Bern.
-- Bishop, C. M. **"Mixture Density Networks."** Technical Report NCRG/94/004, Aston University, 1994.
+- Alex Graves. **"Generating Sequences With Recurrent Neural Networks."** *Neural
+  Computation*, 2013. — the original MDN-RNN + windowed attention handwriting model.
+- IAM On-Line Handwriting Database: A. Graves & J. Schmidhuber, *IAM-OnDB*, University
+  of Bern.
+- Bishop, C. M. **"Mixture Density Networks."** Technical Report NCRG/94/004, Aston
+  University, 1994.
 - Goodfellow, I. et al. **"Generative Adversarial Nets."** NeurIPS 2014.
