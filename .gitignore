@@ -39,6 +39,11 @@ synthetic_data/
 !output_conditioned/log.json
 !output_conditioned/stats.json
 
+# --- Runtime training artifacts (do not commit) ---
+output/tensorboard/
+output_conditioned/tensorboard/
+eval_output/
+
 # --- OS junk ---
 .DS_Store
 Thumbs.db

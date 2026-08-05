@@ -608,9 +608,61 @@ def log_metrics_to_tensorboard(
 # Main
 # ---------------------------------------------------------------------------
 
+def load_yaml_config(config_path: str | Path) -> dict:
+    """Load a YAML config file into a nested dictionary.
+
+    Raises:
+        SystemExit: if PyYAML is not installed or the file is not a mapping.
+    """
+    try:
+        import yaml
+    except ImportError as exc:
+        raise SystemExit(
+            "PyYAML is required for --config. Install it with: pip install pyyaml"
+        ) from exc
+
+    path = Path(config_path)
+    with path.open("r", encoding="utf-8") as f:
+        config = yaml.safe_load(f)
+    if not isinstance(config, dict):
+        raise SystemExit(f"Config file {path} must contain a top-level mapping.")
+    return config
+
+
+def flatten_config(config: dict) -> dict:
+    """Flatten a nested config dict into dotted ``section.key`` -> value pairs."""
+    flat: dict = {}
+    for key, value in config.items():
+        if isinstance(value, dict):
+            for leaf, v in flatten_config(value).items():
+                flat[f"{key}.{leaf}"] = v
+        else:
+            flat[key] = value
+    return flat
+
+
+def apply_config(parser: argparse.ArgumentParser, config: dict) -> None:
+    """Overlay a YAML config onto the parser defaults.
+
+    Only leaf keys that match an existing argparse destination are applied,
+    so unknown or section-level keys are safely ignored. Command-line flags
+    still win because they are parsed after the config defaults are set.
+    """
+    known = {action.dest for action in parser._actions if action.dest != argparse.SUPPRESS}
+    defaults: dict = {}
+    for key, value in flatten_config(config).items():
+        leaf = key.rsplit(".", 1)[-1]
+        if leaf in known and value is not None:
+            defaults[leaf] = value
+    if defaults:
+        parser.set_defaults(**defaults)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Train MDN-RNN for handwriting generation")
-    parser.add_argument("--data_dir", type=str, required=True, help="Root directory of IAM XML files")
+    parser.add_argument("--config", type=str, default=None, help="Path to a YAML config file (optional)")
+    parser.add_argument("--data_dir", type=str, default=None, help="Root directory of IAM XML files")
+    parser.add_argument("--num_workers", type=int, default=0, help="Dataloader worker processes")
     parser.add_argument("--output_dir", type=str, default="./output", help="Checkpoint and sample output dir")
     parser.add_argument("--conditioned", action="store_true", help="Enable text-conditioned training")
     parser.add_argument("--condition_text", type=str, default="the quick brown fox", help="Text to generate during sampling")
@@ -655,7 +707,18 @@ def main() -> None:
     parser.add_argument("--warmup_epochs", type=int, default=5, help="Number of warmup epochs for LR scheduler")
     parser.add_argument("--use_cosine_annealing", action="store_true", help="Use cosine annealing LR scheduler")
     parser.add_argument("--early_stopping_patience", type=int, default=0, help="Early stopping patience (0 = disabled)")
+
+    # A first parse only discovers --config so a config file can set defaults
+    # before the final parse. Command-line flags always take precedence.
+    pre_args, _ = parser.parse_known_args()
+    if pre_args.config:
+        config = load_yaml_config(pre_args.config)
+        apply_config(parser, config)
+        logger.info("Loaded configuration from %s", pre_args.config)
     args = parser.parse_args()
+
+    if args.data_dir is None:
+        parser.error("--data_dir is required (or set data.data_dir in the config file)")
 
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
@@ -701,19 +764,23 @@ def main() -> None:
         train_loader = build_conditioned_dataloader(
             train_xml, vocab=vocab, batch_size=args.batch_size, shuffle=True,
             mean_x=mean_x, std_x=std_x, mean_y=mean_y, std_y=std_y,
+            num_workers=args.num_workers,
         )
         val_loader = build_conditioned_dataloader(
             val_xml, vocab=vocab, batch_size=args.batch_size, shuffle=False,
             mean_x=mean_x, std_x=std_x, mean_y=mean_y, std_y=std_y,
+            num_workers=args.num_workers,
         )
     else:
         train_loader = build_dataloader(
             train_xml, batch_size=args.batch_size, shuffle=True,
             mean_x=mean_x, std_x=std_x, mean_y=mean_y, std_y=std_y,
+            num_workers=args.num_workers,
         )
         val_loader = build_dataloader(
             val_xml, batch_size=args.batch_size, shuffle=False,
             mean_x=mean_x, std_x=std_x, mean_y=mean_y, std_y=std_y,
+            num_workers=args.num_workers,
         )
 
     # -----------------------------------------------------------------------

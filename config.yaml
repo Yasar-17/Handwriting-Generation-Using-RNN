@@ -1,5 +1,6 @@
 # Default configuration for handwriting generation training
-# Usage: python train.py --config config.yaml (requires pyyaml) or use as reference
+# Usage: python train.py --config config.yaml
+# Any command-line flag overrides the matching config value.
 
 data:
   data_dir: "./synthetic_data"
