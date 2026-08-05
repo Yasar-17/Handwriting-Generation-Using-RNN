@@ -1,7 +1,7 @@
 """
 Model export utilities for TorchScript and ONNX.
 
-Provides functions to export trained MDN-RNN models to TorchScript (.pt) 
+Provides functions to export trained MDN-RNN models to TorchScript (.pt)
 and ONNX (.onnx) formats for deployment and inference optimization.
 """
 
@@ -34,8 +34,8 @@ def export_to_torchscript(
     model_state = ckpt["model"]
 
     if conditioned:
-        from models import MDNRNNConditioned
         from data import CharVocab
+        from models import MDNRNNConditioned
 
         vocab = CharVocab()
         hidden_dim = model_state.get("lstm.weight_hh_l0", None)
@@ -123,8 +123,8 @@ def export_to_onnx(
     model_state = ckpt["model"]
 
     if conditioned:
-        from models import MDNRNNConditioned
         from data import CharVocab
+        from models import MDNRNNConditioned
 
         vocab = CharVocab()
         hidden_dim = model_state.get("lstm.weight_hh_l0", None)
@@ -195,7 +195,18 @@ def export_to_onnx(
             opset_version=opset_version,
             do_constant_folding=True,
             input_names=["strokes", "char_ids", "char_mask", "hidden_h", "hidden_c"],
-            output_names=["mu_x", "mu_y", "sigma_x", "sigma_y", "rho", "pi", "pen_up", "hidden_h_out", "hidden_c_out", "attention_weights"],
+            output_names=[
+                "mu_x",
+                "mu_y",
+                "sigma_x",
+                "sigma_y",
+                "rho",
+                "pi",
+                "pen_up",
+                "hidden_h_out",
+                "hidden_c_out",
+                "attention_weights",
+            ],
             dynamic_axes={
                 "strokes": {0: "batch", 1: "sequence"},
                 "char_ids": {0: "batch", 1: "chars"},
@@ -250,7 +261,7 @@ def export_model(
     ckpt_path: str | Path,
     output_dir: str | Path,
     stats_path: str | Path | None = None,
-    format: str = "torchscript",
+    fmt: str = "torchscript",
 ) -> dict[str, Path]:
     """Export a model checkpoint to the specified format.
 
@@ -258,7 +269,7 @@ def export_model(
         ckpt_path: Path to the model checkpoint
         output_dir: Directory to save exported models
         stats_path: Optional path to stats.json to include in export
-        format: Export format ("torchscript", "onnx", or "both")
+        fmt: Export format ("torchscript", "onnx", or "both")
 
     Returns:
         Dictionary with paths to exported files
@@ -272,23 +283,24 @@ def export_model(
 
     exported = {}
 
-    if format in ("torchscript", "both"):
+    if fmt in ("torchscript", "both"):
         ts_path = output_dir / "model.torchscript.pt"
         exported["torchscript"] = export_to_torchscript(ckpt_path, ts_path, conditioned)
 
-    if format in ("onnx", "both"):
+    if fmt in ("onnx", "both"):
         onnx_path = output_dir / "model.onnx"
         exported["onnx"] = export_to_onnx(ckpt_path, onnx_path, conditioned)
 
     if stats_path is not None:
         import shutil
+
         stats_dest = output_dir / "stats.json"
         shutil.copy(stats_path, stats_dest)
         exported["stats"] = stats_dest
 
     export_info = {
         "conditioned": conditioned,
-        "format": format,
+        "format": fmt,
         "exported_files": {k: str(v) for k, v in exported.items()},
     }
     (output_dir / "export_info.json").write_text(json.dumps(export_info, indent=2))

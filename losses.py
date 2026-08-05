@@ -46,7 +46,7 @@ def mdn_loss(
     target_dy = target[:, :, 1]  # (B, T)
     target_pen = target[:, :, 2]  # (B, T)
 
-    B, T, M = mu_x.shape
+    _B, _T, _M = mu_x.shape
 
     # -----------------------------------------------------------------------
     # Bivariate Gaussian log-probability for each component
@@ -59,24 +59,19 @@ def mdn_loss(
     dx = target_dx.unsqueeze(-1) - mu_x  # (B, T, M)
     dy = target_dy.unsqueeze(-1) - mu_y  # (B, T, M)
 
-    sigma_x_sq = sigma_x ** 2
-    sigma_y_sq = sigma_y ** 2
+    sigma_x**2
+    sigma_y**2
 
     norm_x = dx / (sigma_x + eps)
     norm_y = dy / (sigma_y + eps)
 
-    rho_sq = rho ** 2
+    rho_sq = rho**2
     one_minus_rho_sq = 1.0 - rho_sq.clamp(max=1.0 - eps)
 
-    z = (
-        norm_x ** 2
-        + norm_y ** 2
-        - 2.0 * rho * norm_x * norm_y
-    )
+    z = norm_x**2 + norm_y**2 - 2.0 * rho * norm_x * norm_y
 
     log_norm = -0.5 * (
-        torch.log(2.0 * math.pi * sigma_x * sigma_y * torch.sqrt(one_minus_rho_sq))
-        + z / one_minus_rho_sq
+        torch.log(2.0 * math.pi * sigma_x * sigma_y * torch.sqrt(one_minus_rho_sq)) + z / one_minus_rho_sq
     )  # (B, T, M)
 
     # -----------------------------------------------------------------------

@@ -47,9 +47,7 @@ class TestGradientPenalty:
     def test_creates_gradients(self, discriminator, batch):
         real, fake = batch
         penalty = gradient_penalty(discriminator, real, fake)
-        grads = torch.autograd.grad(
-            penalty, discriminator.parameters(), retain_graph=True, allow_unused=True
-        )
+        grads = torch.autograd.grad(penalty, discriminator.parameters(), retain_graph=True, allow_unused=True)
         assert any(g is not None and g.abs().sum() > 0 for g in grads)
 
     def test_lambda_scales_penalty(self, discriminator, batch):
@@ -83,8 +81,15 @@ class TestGradientPenaltyTrainingIntegration:
         loss_fn = MDNLoss()
 
         metrics = train_one_epoch_uncond(
-            model, loader, loss_fn, disc, optimizer, disc_optimizer,
-            torch.device("cpu"), adv_weight=0.1, grad_penalty_weight=10.0,
+            model,
+            loader,
+            loss_fn,
+            disc,
+            optimizer,
+            disc_optimizer,
+            torch.device("cpu"),
+            adv_weight=0.1,
+            grad_penalty_weight=10.0,
         )
 
         assert all(np.isfinite(v) for v in metrics.values())
@@ -94,8 +99,6 @@ class TestGradientPenaltyTrainingIntegration:
     def test_gradient_penalty_flows_to_discriminator(self, discriminator, batch):
         real, fake = batch
         penalty = gradient_penalty(discriminator, real, fake)
-        grads = torch.autograd.grad(
-            penalty, discriminator.parameters(), retain_graph=True, allow_unused=True
-        )
+        grads = torch.autograd.grad(penalty, discriminator.parameters(), retain_graph=True, allow_unused=True)
         grad_norms = [g.abs().sum().item() for g in grads if g is not None]
         assert any(n > 0 for n in grad_norms)

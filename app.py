@@ -13,6 +13,7 @@ import json
 from pathlib import Path
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
@@ -23,8 +24,8 @@ from models import MDNRNN, MDNRNNConditioned
 
 try:
     import gradio as gr
-except ImportError:
-    raise ImportError("Install gradio: pip install gradio")
+except ImportError as exc:
+    raise ImportError("Install gradio: pip install gradio") from exc
 
 
 def _load_model():
@@ -60,24 +61,39 @@ def _load_model():
     if conditioned:
         vocab = CharVocab()
         model = MDNRNNConditioned(
-            input_dim=3, hidden_dim=hidden_dim, num_layers=num_layers,
-            num_mixtures=num_mixtures, num_windows=10,
-            char_vocab_size=len(vocab), char_embed_dim=32, dropout=0.0,
+            input_dim=3,
+            hidden_dim=hidden_dim,
+            num_layers=num_layers,
+            num_mixtures=num_mixtures,
+            num_windows=10,
+            char_vocab_size=len(vocab),
+            char_embed_dim=32,
+            dropout=0.0,
         )
     else:
         vocab = None
         model = MDNRNN(
-            input_dim=3, hidden_dim=hidden_dim, num_layers=num_layers,
-            num_mixtures=num_mixtures, dropout=0.0,
+            input_dim=3,
+            hidden_dim=hidden_dim,
+            num_layers=num_layers,
+            num_mixtures=num_mixtures,
+            dropout=0.0,
         )
 
     model.load_state_dict(model_state)
     model.to(device)
     model.eval()
 
-    stats = json.loads(stats_path.read_text()) if stats_path.exists() else {
-        "mean_x": 0.0, "std_x": 1.0, "mean_y": 0.0, "std_y": 1.0,
-    }
+    stats = (
+        json.loads(stats_path.read_text())
+        if stats_path.exists()
+        else {
+            "mean_x": 0.0,
+            "std_x": 1.0,
+            "mean_y": 0.0,
+            "std_y": 1.0,
+        }
+    )
 
     return model, ckpt, stats, vocab, device
 
@@ -161,9 +177,7 @@ def generate_handwriting(text, temperature, seed, max_len):
     if len(deltas_arr) > 0 and deltas_arr[:, 2].sum() == 0:
         deltas_arr[-1, 2] = 1.0
 
-    deltas_denorm = denormalize_deltas(
-        deltas_arr, stats["mean_x"], stats["std_x"], stats["mean_y"], stats["std_y"]
-    )
+    deltas_denorm = denormalize_deltas(deltas_arr, stats["mean_x"], stats["std_x"], stats["mean_y"], stats["std_y"])
 
     fig = render_strokes(deltas_denorm, title=text, figsize=(10, 4))
 
@@ -173,6 +187,7 @@ def generate_handwriting(text, temperature, seed, max_len):
     buf.seek(0)
 
     from PIL import Image
+
     img = Image.open(buf)
 
     return img, f"Generated {len(deltas_arr)} stroke points | Seed: {int(seed)}"
@@ -190,12 +205,18 @@ demo = gr.Interface(
             lines=2,
         ),
         gr.Slider(
-            minimum=0.1, maximum=2.0, value=0.5, step=0.1,
+            minimum=0.1,
+            maximum=2.0,
+            value=0.5,
+            step=0.1,
             label="Temperature (lower = more deterministic)",
         ),
         gr.Number(value=42, label="Random Seed", precision=0),
         gr.Slider(
-            minimum=100, maximum=3000, value=1000, step=100,
+            minimum=100,
+            maximum=3000,
+            value=1000,
+            step=100,
             label="Max Sequence Length",
         ),
     ],

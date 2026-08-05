@@ -106,8 +106,15 @@ class TestEMATrainingIntegration:
         from train import train_one_epoch_uncond
 
         metrics = train_one_epoch_uncond(
-            model, loader, loss_fn, None, optimizer, None,
-            torch.device("cpu"), grad_accum_steps=1, ema=ema,
+            model,
+            loader,
+            loss_fn,
+            None,
+            optimizer,
+            None,
+            torch.device("cpu"),
+            grad_accum_steps=1,
+            ema=ema,
         )
 
         assert metrics["mdn_loss"] > 0

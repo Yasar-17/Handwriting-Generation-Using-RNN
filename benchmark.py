@@ -7,7 +7,7 @@ Measures inference latency, throughput, memory usage, and model size.
 import json
 import sys
 import time
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import numpy as np
@@ -122,7 +122,7 @@ def benchmark_autoregressive_sampling(
         x = torch.zeros(1, 1, 3, device=device)
 
         if conditioned:
-            vocab = CharVocab()
+            CharVocab()
             char_ids = torch.tensor([[1, 2, 3, 4, 5]], dtype=torch.long, device=device)
             char_mask = torch.ones(1, 5, dtype=torch.bool, device=device)
 
@@ -175,15 +175,22 @@ def run_benchmark(
 
         if conditioned:
             model = MDNRNNConditioned(
-                input_dim=3, hidden_dim=hidden_dim, num_layers=num_layers,
-                num_mixtures=num_mixtures, num_windows=num_windows,
-                char_vocab_size=len(vocab), char_embed_dim=char_embed_dim,
+                input_dim=3,
+                hidden_dim=hidden_dim,
+                num_layers=num_layers,
+                num_mixtures=num_mixtures,
+                num_windows=num_windows,
+                char_vocab_size=len(vocab),
+                char_embed_dim=char_embed_dim,
                 dropout=0.0,
             ).to(device)
         else:
             model = MDNRNN(
-                input_dim=3, hidden_dim=hidden_dim, num_layers=num_layers,
-                num_mixtures=num_mixtures, dropout=0.0,
+                input_dim=3,
+                hidden_dim=hidden_dim,
+                num_layers=num_layers,
+                num_mixtures=num_mixtures,
+                dropout=0.0,
             ).to(device)
 
         total_params, trainable_params = count_parameters(model)
@@ -193,12 +200,18 @@ def run_benchmark(
             torch.cuda.reset_peak_memory_stats()
 
         fwd_latency, fwd_throughput = benchmark_forward_pass(
-            model, batch_size=batch_size, seq_len=seq_len,
-            conditioned=conditioned, device=device,
+            model,
+            batch_size=batch_size,
+            seq_len=seq_len,
+            conditioned=conditioned,
+            device=device,
         )
 
         sampling_latency = benchmark_autoregressive_sampling(
-            model, seq_len=sample_len, conditioned=conditioned, device=device,
+            model,
+            seq_len=sample_len,
+            conditioned=conditioned,
+            device=device,
         )
 
         peak_mem = get_peak_memory_mb(device)
@@ -242,7 +255,9 @@ def benchmark_discriminator(
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     disc = SequenceDiscriminator(
-        input_dim=3, hidden_dim=hidden_dim, num_layers=num_layers,
+        input_dim=3,
+        hidden_dim=hidden_dim,
+        num_layers=num_layers,
     ).to(device)
 
     total, _ = count_parameters(disc)

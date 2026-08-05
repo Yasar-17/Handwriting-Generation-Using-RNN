@@ -3,20 +3,17 @@
 import sys
 from pathlib import Path
 
-import pytest
-import torch
-
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from benchmark import (
-    count_parameters,
-    model_size_mb,
-    benchmark_forward_pass,
     benchmark_autoregressive_sampling,
     benchmark_discriminator,
+    benchmark_forward_pass,
+    count_parameters,
+    model_size_mb,
 )
-from models import MDNRNN, MDNRNNConditioned, SequenceDiscriminator
 from data import CharVocab
+from models import MDNRNN, MDNRNNConditioned
 
 
 class TestParameterCounting:
@@ -29,10 +26,14 @@ class TestParameterCounting:
     def test_conditioned_parameters(self):
         vocab = CharVocab()
         model = MDNRNNConditioned(
-            input_dim=3, hidden_dim=64, num_layers=2,
-            num_mixtures=10, char_vocab_size=len(vocab), char_embed_dim=16,
+            input_dim=3,
+            hidden_dim=64,
+            num_layers=2,
+            num_mixtures=10,
+            char_vocab_size=len(vocab),
+            char_embed_dim=16,
         )
-        total, trainable = count_parameters(model)
+        total, _trainable = count_parameters(model)
         assert total > 0
 
 
@@ -52,7 +53,11 @@ class TestBenchmarkForward:
     def test_unconditional_forward(self):
         model = MDNRNN(input_dim=3, hidden_dim=64, num_layers=2, num_mixtures=10)
         latency, throughput = benchmark_forward_pass(
-            model, batch_size=2, seq_len=50, num_warmup=2, num_runs=5,
+            model,
+            batch_size=2,
+            seq_len=50,
+            num_warmup=2,
+            num_runs=5,
         )
         assert latency > 0
         assert throughput > 0
@@ -60,11 +65,19 @@ class TestBenchmarkForward:
     def test_conditioned_forward(self):
         vocab = CharVocab()
         model = MDNRNNConditioned(
-            input_dim=3, hidden_dim=64, num_layers=2,
-            num_mixtures=10, char_vocab_size=len(vocab), char_embed_dim=16,
+            input_dim=3,
+            hidden_dim=64,
+            num_layers=2,
+            num_mixtures=10,
+            char_vocab_size=len(vocab),
+            char_embed_dim=16,
         )
-        latency, throughput = benchmark_forward_pass(
-            model, batch_size=2, seq_len=50, num_warmup=2, num_runs=5,
+        latency, _throughput = benchmark_forward_pass(
+            model,
+            batch_size=2,
+            seq_len=50,
+            num_warmup=2,
+            num_runs=5,
             conditioned=True,
         )
         assert latency > 0
@@ -74,18 +87,27 @@ class TestBenchmarkSampling:
     def test_unconditional_sampling(self):
         model = MDNRNN(input_dim=3, hidden_dim=64, num_layers=2, num_mixtures=10)
         latency = benchmark_autoregressive_sampling(
-            model, seq_len=20, num_runs=2,
+            model,
+            seq_len=20,
+            num_runs=2,
         )
         assert latency > 0
 
     def test_conditioned_sampling(self):
         vocab = CharVocab()
         model = MDNRNNConditioned(
-            input_dim=3, hidden_dim=64, num_layers=2,
-            num_mixtures=10, char_vocab_size=len(vocab), char_embed_dim=16,
+            input_dim=3,
+            hidden_dim=64,
+            num_layers=2,
+            num_mixtures=10,
+            char_vocab_size=len(vocab),
+            char_embed_dim=16,
         )
         latency = benchmark_autoregressive_sampling(
-            model, seq_len=20, num_runs=2, conditioned=True,
+            model,
+            seq_len=20,
+            num_runs=2,
+            conditioned=True,
         )
         assert latency > 0
 
@@ -93,7 +115,10 @@ class TestBenchmarkSampling:
 class TestDiscriminatorBenchmark:
     def test_discriminator_benchmark(self):
         result = benchmark_discriminator(
-            hidden_dim=32, num_layers=2, batch_size=2, seq_len=50,
+            hidden_dim=32,
+            num_layers=2,
+            batch_size=2,
+            seq_len=50,
         )
         assert result["parameters"] > 0
         assert result["forward_latency_ms"] > 0

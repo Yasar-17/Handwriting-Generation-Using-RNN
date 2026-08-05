@@ -12,11 +12,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from render import (
     THEMES,
     RenderTheme,
+    render_comparison_grid,
+    render_multi_sample,
     render_strokes_svg,
     render_strokes_themed,
-    render_multi_sample,
     save_svg,
-    render_comparison_grid,
 )
 
 

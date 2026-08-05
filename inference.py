@@ -229,7 +229,10 @@ def main() -> None:
         for i in range(args.num_samples):
             logger.info("Generating '%s' (sample %d/%d, T=%.2f)...", text, i + 1, args.num_samples, args.temperature)
             deltas = sample_from_model(
-                model, ckpt, text, stats,
+                model,
+                ckpt,
+                text,
+                stats,
                 temperature=args.temperature,
                 top_k=args.top_k,
                 top_p=args.top_p,

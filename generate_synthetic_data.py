@@ -1,10 +1,9 @@
 """Generate synthetic IAM-style XML handwriting data for training."""
 
-import os
 import random
 import xml.etree.ElementTree as ET
-from xml.dom import minidom
 from pathlib import Path
+from xml.dom import minidom
 
 # Sample texts that mimic IAM handwriting dataset
 SAMPLE_TEXTS = [
@@ -62,60 +61,193 @@ SAMPLE_TEXTS = [
 
 # Common English words for generating random sentences
 WORDS = [
-    "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for",
-    "of", "with", "by", "from", "is", "are", "was", "were", "be", "been",
-    "have", "has", "had", "do", "does", "did", "will", "would", "could",
-    "should", "may", "might", "must", "shall", "can", "need", "dare",
-    "ought", "used", "it", "its", "this", "that", "these", "those",
-    "i", "you", "he", "she", "we", "they", "me", "him", "her", "us",
-    "them", "my", "your", "his", "our", "their", "what", "which", "who",
-    "whom", "whose", "where", "when", "why", "how", "all", "each",
-    "every", "both", "few", "many", "much", "some", "any", "no", "not",
-    "only", "own", "same", "so", "than", "too", "very", "just", "also",
-    "now", "here", "there", "then", "once", "never", "always", "often",
-    "sometimes", "usually", "generally", "frequently", "commonly",
-    "handwriting", "recognition", "neural", "network", "deep", "learning",
-    "model", "training", "data", "sequence", "pattern", "generation",
-    "text", "word", "letter", "character", "stroke", "pen", "paper",
-    "write", "reading", "language", "machine", "computer", "algorithm",
-    "system", "process", "method", "approach", "technique", "analysis",
-    "research", "study", "experiment", "result", "performance", "accuracy",
-    "error", "loss", "function", "optimization", "gradient", "descent",
-    "recurrent", "convolutional", "attention", "transformer", "encoder",
-    "decoder", "embedding", "representation", "feature", "extraction",
+    "the",
+    "a",
+    "an",
+    "and",
+    "or",
+    "but",
+    "in",
+    "on",
+    "at",
+    "to",
+    "for",
+    "of",
+    "with",
+    "by",
+    "from",
+    "is",
+    "are",
+    "was",
+    "were",
+    "be",
+    "been",
+    "have",
+    "has",
+    "had",
+    "do",
+    "does",
+    "did",
+    "will",
+    "would",
+    "could",
+    "should",
+    "may",
+    "might",
+    "must",
+    "shall",
+    "can",
+    "need",
+    "dare",
+    "ought",
+    "used",
+    "it",
+    "its",
+    "this",
+    "that",
+    "these",
+    "those",
+    "i",
+    "you",
+    "he",
+    "she",
+    "we",
+    "they",
+    "me",
+    "him",
+    "her",
+    "us",
+    "them",
+    "my",
+    "your",
+    "his",
+    "our",
+    "their",
+    "what",
+    "which",
+    "who",
+    "whom",
+    "whose",
+    "where",
+    "when",
+    "why",
+    "how",
+    "all",
+    "each",
+    "every",
+    "both",
+    "few",
+    "many",
+    "much",
+    "some",
+    "any",
+    "no",
+    "not",
+    "only",
+    "own",
+    "same",
+    "so",
+    "than",
+    "too",
+    "very",
+    "just",
+    "also",
+    "now",
+    "here",
+    "there",
+    "then",
+    "once",
+    "never",
+    "always",
+    "often",
+    "sometimes",
+    "usually",
+    "generally",
+    "frequently",
+    "commonly",
+    "handwriting",
+    "recognition",
+    "neural",
+    "network",
+    "deep",
+    "learning",
+    "model",
+    "training",
+    "data",
+    "sequence",
+    "pattern",
+    "generation",
+    "text",
+    "word",
+    "letter",
+    "character",
+    "stroke",
+    "pen",
+    "paper",
+    "write",
+    "reading",
+    "language",
+    "machine",
+    "computer",
+    "algorithm",
+    "system",
+    "process",
+    "method",
+    "approach",
+    "technique",
+    "analysis",
+    "research",
+    "study",
+    "experiment",
+    "result",
+    "performance",
+    "accuracy",
+    "error",
+    "loss",
+    "function",
+    "optimization",
+    "gradient",
+    "descent",
+    "recurrent",
+    "convolutional",
+    "attention",
+    "transformer",
+    "encoder",
+    "decoder",
+    "embedding",
+    "representation",
+    "feature",
+    "extraction",
 ]
 
 
 def generate_handwriting_strokes(text, num_strokes=None, base_x=100, base_y=200):
     """Generate realistic-looking handwriting strokes for a given text.
-    
+
     Simulates pen movements with natural variations.
     """
     if num_strokes is None:
         # Roughly 2-5 strokes per character
         num_strokes = max(3, len(text) * random.randint(2, 4) // 3)
-    
+
     strokes = []
     x, y = base_x + random.uniform(-20, 20), base_y + random.uniform(-15, 15)
-    
+
     # Word boundaries (pen lifts)
     word_boundaries = set()
     pos = 0
     for word in text.split():
         pos += len(word) + 1  # +1 for space
         word_boundaries.add(pos - 1)
-    
-    chars_generated = 0
-    stroke_idx = 0
-    
+
     for i in range(num_strokes):
         # Determine if this is near a word boundary (pen lift)
-        is_word_boundary = chars_generated in word_boundaries or (i > 0 and random.random() < 0.08)
-        
+        is_word_boundary = i in word_boundaries or (i > 0 and random.random() < 0.08)
+
         # Generate stroke points (3-8 points per stroke)
         num_points = random.randint(3, 8)
         stroke_points = []
-        
+
         for j in range(num_points):
             # Natural handwriting movement patterns
             if j == 0:
@@ -134,31 +266,30 @@ def generate_handwriting_strokes(text, num_strokes=None, base_x=100, base_y=200)
                 # Subsequent points: smooth curves
                 dx = random.uniform(-3, 25)
                 dy = random.uniform(-15, 15)
-            
+
             x += dx
             y += dy
-            
+
             # Add some natural variation and noise
             x += random.gauss(0, 2)
             y += random.gauss(0, 3)
-            
+
             time = i * 100 + j * 10 + random.randint(0, 5)
             stroke_points.append((round(x, 1), round(y, 1), time))
-        
-        chars_generated += 1
+
         strokes.append(stroke_points)
-    
+
     return strokes
 
 
 def create_xml_element(text, strokes, filename):
     """Create an IAM-style XML element tree."""
     root = ET.Element("StrokeSet")
-    
+
     # Add Line element with text attribute
     line_elem = ET.SubElement(root, "Line")
     line_elem.set("text", text)
-    
+
     # Add strokes
     for stroke_points in strokes:
         stroke_elem = ET.SubElement(root, "Stroke")
@@ -167,7 +298,7 @@ def create_xml_element(text, strokes, filename):
             point_elem.set("x", str(round(x, 1)))
             point_elem.set("y", str(round(y, 1)))
             point_elem.set("time", str(time))
-    
+
     return root
 
 
@@ -183,9 +314,9 @@ def generate_dataset(output_dir, num_samples=500, seed=42):
     random.seed(seed)
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
-    
+
     print(f"Generating {num_samples} synthetic XML files...")
-    
+
     for i in range(num_samples):
         # Pick a text sample or generate a random sentence
         if i < len(SAMPLE_TEXTS):
@@ -195,34 +326,34 @@ def generate_dataset(output_dir, num_samples=500, seed=42):
             num_words = random.randint(3, 12)
             text = " ".join(random.choices(WORDS, k=num_words))
             text = text[0].upper() + text[1:]  # Capitalize first letter
-        
+
         # Generate strokes
         strokes = generate_handwriting_strokes(text)
-        
+
         # Create XML
         filename = f"synthetic_{i:04d}.xml"
         root = create_xml_element(text, strokes, filename)
         xml_str = prettify_xml(root)
-        
+
         # Write file
         filepath = output_path / filename
         with open(filepath, "w", encoding="utf-8") as f:
             f.write(xml_str)
-        
+
         if (i + 1) % 100 == 0:
             print(f"  Generated {i + 1}/{num_samples} files...")
-    
+
     print(f"Done! Generated {num_samples} XML files in {output_path}")
     return output_path
 
 
 if __name__ == "__main__":
     import argparse
-    
+
     parser = argparse.ArgumentParser(description="Generate synthetic IAM-style XML data")
     parser.add_argument("--output_dir", type=str, default="./synthetic_data", help="Output directory")
     parser.add_argument("--num_samples", type=int, default=500, help="Number of XML files to generate")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     args = parser.parse_args()
-    
+
     generate_dataset(args.output_dir, args.num_samples, args.seed)

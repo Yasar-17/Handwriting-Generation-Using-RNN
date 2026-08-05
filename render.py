@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
@@ -106,57 +107,82 @@ def render_strokes_svg(
     offset_x = -x_min + pad
     offset_y = -y_min + pad
 
-    svg = ET.Element("svg", {
-        "xmlns": "http://www.w3.org/2000/svg",
-        "width": str(svg_width),
-        "height": str(svg_height + (30 if title else 0)),
-        "viewBox": f"0 0 {svg_width} {svg_height + (30 if title else 0)}",
-    })
+    svg = ET.Element(
+        "svg",
+        {
+            "xmlns": "http://www.w3.org/2000/svg",
+            "width": str(svg_width),
+            "height": str(svg_height + (30 if title else 0)),
+            "viewBox": f"0 0 {svg_width} {svg_height + (30 if title else 0)}",
+        },
+    )
 
-    bg = ET.SubElement(svg, "rect", {
-        "width": "100%", "height": "100%",
-        "fill": theme.background_color,
-    })
+    ET.SubElement(
+        svg,
+        "rect",
+        {
+            "width": "100%",
+            "height": "100%",
+            "fill": theme.background_color,
+        },
+    )
 
     if theme.show_grid:
         grid_g = ET.SubElement(svg, "g", {"opacity": "0.5"})
         gs = theme.grid_spacing * scale
         x = 0
         while x < svg_width:
-            ET.SubElement(grid_g, "line", {
-                "x1": str(x), "y1": "0",
-                "x2": str(x), "y2": str(svg_height),
-                "stroke": theme.grid_color, "stroke-width": "0.5",
-            })
+            ET.SubElement(
+                grid_g,
+                "line",
+                {
+                    "x1": str(x),
+                    "y1": "0",
+                    "x2": str(x),
+                    "y2": str(svg_height),
+                    "stroke": theme.grid_color,
+                    "stroke-width": "0.5",
+                },
+            )
             x += gs
         y = 0
         while y < svg_height:
-            ET.SubElement(grid_g, "line", {
-                "x1": "0", "y1": str(y),
-                "x2": str(svg_width), "y2": str(y),
-                "stroke": theme.grid_color, "stroke-width": "0.5",
-            })
+            ET.SubElement(
+                grid_g,
+                "line",
+                {
+                    "x1": "0",
+                    "y1": str(y),
+                    "x2": str(svg_width),
+                    "y2": str(y),
+                    "stroke": theme.grid_color,
+                    "stroke-width": "0.5",
+                },
+            )
             y += gs
 
     stroke_start = 0
     for i in range(len(abs_pts)):
         if abs_pts[i, 2] == 1:
-            _add_stroke_path(svg, abs_pts[stroke_start:i + 1], offset_x, offset_y, scale, svg_height, theme)
+            _add_stroke_path(svg, abs_pts[stroke_start : i + 1], offset_x, offset_y, scale, svg_height, theme)
             stroke_start = i + 1
 
     if stroke_start < len(abs_pts):
         _add_stroke_path(svg, abs_pts[stroke_start:], offset_x, offset_y, scale, svg_height, theme)
 
     if title:
-        text_y_offset = 30 if title else 0
-        text_elem = ET.SubElement(svg, "text", {
-            "x": str(svg_width / 2),
-            "y": str(svg_height + 20),
-            "text-anchor": "middle",
-            "font-family": theme.font_family,
-            "font-size": "14",
-            "fill": theme.title_color,
-        })
+        text_elem = ET.SubElement(
+            svg,
+            "text",
+            {
+                "x": str(svg_width / 2),
+                "y": str(svg_height + 20),
+                "text-anchor": "middle",
+                "font-family": theme.font_family,
+                "font-size": "14",
+                "fill": theme.title_color,
+            },
+        )
         text_elem.text = title
 
     return ET.tostring(svg, encoding="unicode", xml_declaration=True)
@@ -175,14 +201,18 @@ def _add_stroke_path(svg, points, offset_x, offset_y, scale, svg_height, theme):
         else:
             path_d += f" L {sx:.2f} {sy:.2f}"
 
-    ET.SubElement(svg, "path", {
-        "d": path_d,
-        "stroke": theme.stroke_color,
-        "stroke-width": str(theme.line_width),
-        "fill": "none",
-        "stroke-linecap": "round",
-        "stroke-linejoin": "round",
-    })
+    ET.SubElement(
+        svg,
+        "path",
+        {
+            "d": path_d,
+            "stroke": theme.stroke_color,
+            "stroke-width": str(theme.line_width),
+            "fill": "none",
+            "stroke-linecap": "round",
+            "stroke-linejoin": "round",
+        },
+    )
 
 
 def render_strokes_themed(
@@ -207,9 +237,10 @@ def render_strokes_themed(
     stroke_start = 0
     for i in range(len(abs_pts)):
         if abs_pts[i, 2] == 1:
-            stroke = abs_pts[stroke_start:i + 1]
+            stroke = abs_pts[stroke_start : i + 1]
             ax.plot(
-                stroke[:, 0], -stroke[:, 1],
+                stroke[:, 0],
+                -stroke[:, 1],
                 color=theme.stroke_color,
                 linewidth=theme.line_width,
                 solid_capstyle="round",
@@ -220,7 +251,8 @@ def render_strokes_themed(
     if stroke_start < len(abs_pts):
         stroke = abs_pts[stroke_start:]
         ax.plot(
-            stroke[:, 0], -stroke[:, 1],
+            stroke[:, 0],
+            -stroke[:, 1],
             color=theme.stroke_color,
             linewidth=theme.line_width,
             solid_capstyle="round",
@@ -263,7 +295,7 @@ def render_multi_sample(
         stroke_start = 0
         for j in range(len(abs_pts)):
             if abs_pts[j, 2] == 1:
-                stroke = abs_pts[stroke_start:j + 1]
+                stroke = abs_pts[stroke_start : j + 1]
                 ax.plot(stroke[:, 0], -stroke[:, 1], color=t.stroke_color, linewidth=t.line_width)
                 stroke_start = j + 1
 
@@ -323,7 +355,7 @@ def render_comparison_grid(
             stroke_start = 0
             for k in range(len(abs_pts)):
                 if abs_pts[k, 2] == 1:
-                    stroke = abs_pts[stroke_start:k + 1]
+                    stroke = abs_pts[stroke_start : k + 1]
                     ax.plot(stroke[:, 0], -stroke[:, 1], color=t.stroke_color, linewidth=t.line_width)
                     stroke_start = k + 1
             if stroke_start < len(abs_pts):

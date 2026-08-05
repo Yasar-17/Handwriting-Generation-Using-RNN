@@ -84,6 +84,7 @@ ignore = ["E501", "B008", "N802", "N806", "SIM108"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["N", "B"]
+"__init__.py" = ["N999"]
 
 [tool.mypy]
 python_version = "3.10"

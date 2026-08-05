@@ -1,7 +1,5 @@
 """Comprehensive unit tests for the handwriting generation pipeline."""
 
-import json
-import os
 import sys
 import tempfile
 from pathlib import Path
@@ -14,8 +12,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from data import (
     CharVocab,
-    IAMConditionedDataset,
-    IAMStrokeDataset,
     absolute_to_relative,
     build_conditioned_dataloader,
     build_dataloader,
@@ -25,13 +21,10 @@ from data import (
     denormalize_deltas,
     normalize_deltas,
     parse_iam_xml,
-    prepare_splits,
     relative_to_absolute,
-    render_strokes,
 )
-from losses import MDNLoss, adversarial_loss, mdn_loss, mdn_mixture_mean
+from losses import MDNLoss, adversarial_loss, mdn_mixture_mean
 from models import MDNRNN, MDNRNNConditioned, SequenceDiscriminator, WindowedAttention
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -76,6 +69,7 @@ def device():
 # ---------------------------------------------------------------------------
 # Data Pipeline Tests
 # ---------------------------------------------------------------------------
+
 
 class TestCharVocab:
     def test_encode_decode(self):
@@ -144,7 +138,7 @@ class TestNormalization:
 
     def test_compute_stats(self, temp_xml_dir):
         xml_files = list(Path(temp_xml_dir).glob("*.xml"))
-        mean_x, std_x, mean_y, std_y = compute_dataset_stats(xml_files)
+        _mean_x, std_x, _mean_y, std_y = compute_dataset_stats(xml_files)
         assert std_x > 0
         assert std_y > 0
 
@@ -156,8 +150,8 @@ class TestCollation:
         batch = collate_fn([seq1, seq2])
         assert batch["data"].shape == (2, 3, 3)
         assert batch["mask"].shape == (2, 3)
-        assert batch["mask"][0, 2] == False
-        assert batch["mask"][1, 2] == True
+        assert not batch["mask"][0, 2]
+        assert batch["mask"][1, 2]
         assert batch["lengths"].tolist() == [2, 3]
 
     def test_collate_fn_conditioned(self):
@@ -168,20 +162,21 @@ class TestCollation:
         batch = collate_fn_conditioned([(char_ids1, seq1), (char_ids2, seq2)])
         assert batch["data"].shape == (2, 3, 3)
         assert batch["char_ids"].shape == (2, 3)
-        assert batch["char_mask"][0, 2] == True
-        assert batch["char_mask"][1, 2] == False
+        assert batch["char_mask"][0, 2]
+        assert not batch["char_mask"][1, 2]
 
 
 # ---------------------------------------------------------------------------
 # Model Tests
 # ---------------------------------------------------------------------------
 
+
 class TestMDNRNN:
     def test_forward_shape(self):
         B, T, M = 4, 50, 20
         model = MDNRNN(input_dim=3, hidden_dim=128, num_mixtures=M)
         x = torch.randn(B, T, 3)
-        params, hidden = model(x)
+        params, _hidden = model(x)
 
         assert params["mu_x"].shape == (B, T, M)
         assert params["mu_y"].shape == (B, T, M)
@@ -199,15 +194,15 @@ class TestMDNRNN:
 
         assert (params["sigma_x"] > 0).all()
         assert (params["sigma_y"] > 0).all()
-        assert (-1 <= params["rho"]).all() and (params["rho"] <= 1).all()
+        assert (params["rho"] >= -1).all() and (params["rho"] <= 1).all()
         assert torch.allclose(params["pi"].sum(-1), torch.ones(B, T), atol=1e-5)
-        assert (0 <= params["pen_up"]).all() and (params["pen_up"] <= 1).all()
+        assert (params["pen_up"] >= 0).all() and (params["pen_up"] <= 1).all()
 
     def test_hidden_state_passing(self):
         model = MDNRNN(input_dim=3, hidden_dim=64, num_mixtures=10)
         x = torch.randn(2, 10, 3)
-        params1, hidden1 = model(x)
-        params2, hidden2 = model(x, hidden1)
+        _params1, hidden1 = model(x)
+        _params2, hidden2 = model(x, hidden1)
         assert hidden2[0].shape == hidden1[0].shape
 
     def test_init_hidden(self):
@@ -236,14 +231,18 @@ class TestMDNRNNConditioned:
     def test_forward_shape(self):
         B, T, C, M = 2, 40, 15, 10
         model = MDNRNNConditioned(
-            input_dim=3, hidden_dim=64, num_mixtures=M,
-            num_windows=5, char_vocab_size=80, char_embed_dim=16,
+            input_dim=3,
+            hidden_dim=64,
+            num_mixtures=M,
+            num_windows=5,
+            char_vocab_size=80,
+            char_embed_dim=16,
         )
         x = torch.randn(B, T, 3)
         char_ids = torch.randint(0, 80, (B, C))
         char_mask = torch.ones(B, C, dtype=torch.bool)
 
-        params, hidden, phi = model(x, char_ids, char_mask)
+        params, _hidden, phi = model(x, char_ids, char_mask)
 
         assert params["mu_x"].shape == (B, T, M)
         assert phi.shape == (B, T, C)
@@ -251,15 +250,19 @@ class TestMDNRNNConditioned:
     def test_chunked_forward(self):
         B, T, C, M = 2, 40, 15, 10
         model = MDNRNNConditioned(
-            input_dim=3, hidden_dim=64, num_mixtures=M,
-            num_windows=5, char_vocab_size=80, char_embed_dim=16,
+            input_dim=3,
+            hidden_dim=64,
+            num_mixtures=M,
+            num_windows=5,
+            char_vocab_size=80,
+            char_embed_dim=16,
             chunk_size=8,
         )
         x = torch.randn(B, T, 3)
         char_ids = torch.randint(0, 80, (B, C))
         char_mask = torch.ones(B, C, dtype=torch.bool)
 
-        params, hidden, phi = model(x, char_ids, char_mask, chunk_size=8)
+        params, _hidden, _phi = model(x, char_ids, char_mask, chunk_size=8)
         assert params["mu_x"].shape == (B, T, M)
 
 
@@ -282,7 +285,7 @@ class TestWindowedAttention:
         char_embeddings = torch.randn(B, 20, 16)
         char_mask = torch.ones(B, 20, dtype=torch.bool)
 
-        context, phi, final_kappa = attn(lstm_out, char_embeddings, char_mask, return_kappa=True)
+        _context, _phi, final_kappa = attn(lstm_out, char_embeddings, char_mask, return_kappa=True)
         assert final_kappa.shape == (B, K)
 
 
@@ -293,7 +296,7 @@ class TestSequenceDiscriminator:
         x = torch.randn(B, T, 3)
         output = disc(x)
         assert output.shape == (B,)
-        assert (0 <= output).all() and (output <= 1).all()
+        assert (output >= 0).all() and (output <= 1).all()
 
     def test_gradient_flow(self):
         disc = SequenceDiscriminator(input_dim=3, hidden_dim=64, num_layers=3)
@@ -307,6 +310,7 @@ class TestSequenceDiscriminator:
 # ---------------------------------------------------------------------------
 # Loss Tests
 # ---------------------------------------------------------------------------
+
 
 class TestMDNLoss:
     def test_loss_is_positive(self):
@@ -381,13 +385,19 @@ class TestAdversarialLoss:
 # Integration Tests
 # ---------------------------------------------------------------------------
 
+
 class TestEndToEnd:
     def test_unconditional_train_step(self, temp_xml_dir):
         xml_files = list(Path(temp_xml_dir).glob("*.xml"))
         mean_x, std_x, mean_y, std_y = compute_dataset_stats(xml_files)
         loader = build_dataloader(
-            xml_files, batch_size=2, shuffle=True,
-            mean_x=mean_x, std_x=std_x, mean_y=mean_y, std_y=std_y,
+            xml_files,
+            batch_size=2,
+            shuffle=True,
+            mean_x=mean_x,
+            std_x=std_x,
+            mean_y=mean_y,
+            std_y=std_y,
         )
         model = MDNRNN(input_dim=3, hidden_dim=64, num_mixtures=10)
         optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
@@ -411,12 +421,22 @@ class TestEndToEnd:
         vocab = CharVocab()
         mean_x, std_x, mean_y, std_y = compute_dataset_stats(xml_files)
         loader = build_conditioned_dataloader(
-            xml_files, vocab=vocab, batch_size=2, shuffle=True,
-            mean_x=mean_x, std_x=std_x, mean_y=mean_y, std_y=std_y,
+            xml_files,
+            vocab=vocab,
+            batch_size=2,
+            shuffle=True,
+            mean_x=mean_x,
+            std_x=std_x,
+            mean_y=mean_y,
+            std_y=std_y,
         )
         model = MDNRNNConditioned(
-            input_dim=3, hidden_dim=64, num_mixtures=10,
-            num_windows=5, char_vocab_size=len(vocab), char_embed_dim=16,
+            input_dim=3,
+            hidden_dim=64,
+            num_mixtures=10,
+            num_windows=5,
+            char_vocab_size=len(vocab),
+            char_embed_dim=16,
         )
         optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
         loss_fn = MDNLoss()

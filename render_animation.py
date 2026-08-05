@@ -9,10 +9,11 @@ lines across pen-up events). Uses Pillow as the GIF writer (bundled with the
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
@@ -95,7 +96,7 @@ def _revealed_frames(lines, segments, ends, reveals):
     """Generator yielding per-frame (ax.set_xlim/ylim, line data) updates."""
     for count in reveals:
         data_updates = []
-        for i, (seg, end) in enumerate(zip(segments, ends)):
+        for i, (seg, end) in enumerate(zip(segments, ends, strict=False)):
             start = 0 if i == 0 else ends[i - 1]
             if count < start:
                 data_updates.append((lines[i], [], []))
@@ -149,7 +150,7 @@ def render_handwriting_gif(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     writer = PillowWriter(fps=fps)
     with writer.saving(fig, str(output_path), dpi=dpi):
-        for i, data_updates in enumerate(frames):
+        for _i, data_updates in enumerate(frames):
             for line, xs, ys in data_updates:
                 line.set_data(xs, ys)
                 line.set_visible(len(xs) > 0)

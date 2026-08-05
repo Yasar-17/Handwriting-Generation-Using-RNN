@@ -39,6 +39,7 @@ from sampling import sample_mixture_component
 # Checkpoint loading
 # ---------------------------------------------------------------------------
 
+
 def load_checkpoint(
     ckpt_path: str | Path,
     device: torch.device,
@@ -59,7 +60,9 @@ def load_checkpoint(
     if conditioned:
         model = MDNRNNConditioned(
             input_dim=3,
-            hidden_dim=ckpt["model"].get("lstm.weight_hh_l0", None).shape[1] if "lstm.weight_hh_l0" in ckpt["model"] else 256,
+            hidden_dim=ckpt["model"].get("lstm.weight_hh_l0", None).shape[1]
+            if "lstm.weight_hh_l0" in ckpt["model"]
+            else 256,
             num_layers=_infer_num_layers(ckpt["model"]),
             num_mixtures=_infer_num_mixtures(ckpt["model"]),
             num_windows=10,
@@ -110,6 +113,7 @@ def _infer_num_mixtures(state_dict: dict) -> int:
 # 1. Compute average NLL on validation set
 # ---------------------------------------------------------------------------
 
+
 @torch.no_grad()
 def compute_val_nll(
     model: torch.nn.Module,
@@ -145,6 +149,7 @@ def compute_val_nll(
 # ---------------------------------------------------------------------------
 # 2. Side-by-side comparison images
 # ---------------------------------------------------------------------------
+
 
 @torch.no_grad()
 def sample_conditioned(
@@ -193,7 +198,7 @@ def sample_conditioned(
         z1 = np.random.randn()
         z2 = np.random.randn()
         dx = mx + sx * z1
-        dy = my + sy * (r * z1 + np.sqrt(max(1 - r ** 2, 0)) * z2)
+        dy = my + sy * (r * z1 + np.sqrt(max(1 - r**2, 0)) * z2)
 
         pen_up = 1.0 if np.random.rand() < pen_prob else 0.0
 
@@ -254,7 +259,7 @@ def sample_unconditional(
         z1 = np.random.randn()
         z2 = np.random.randn()
         dx = mx + sx * z1
-        dy = my + sy * (r * z1 + np.sqrt(max(1 - r ** 2, 0)) * z2)
+        dy = my + sy * (r * z1 + np.sqrt(max(1 - r**2, 0)) * z2)
 
         pen_up = 1.0 if np.random.rand() < pen_prob else 0.0
 
@@ -352,6 +357,7 @@ def generate_comparison_images(
 # 3. generate_handwriting(text) demo function
 # ---------------------------------------------------------------------------
 
+
 class HandwritingGenerator:
     """Demo wrapper that loads a trained model and generates handwriting images."""
 
@@ -395,7 +401,9 @@ class HandwritingGenerator:
         """
         if self.conditioned:
             deltas = sample_conditioned(
-                self.model, text, self.vocab,
+                self.model,
+                text,
+                self.vocab,
                 temperature=temperature,
                 top_k=top_k,
                 top_p=top_p,
@@ -413,9 +421,7 @@ class HandwritingGenerator:
                 device=self.device,
             )
 
-        deltas_denorm = denormalize_deltas(
-            deltas, self.mean_x, self.std_x, self.mean_y, self.std_y
-        )
+        deltas_denorm = denormalize_deltas(deltas, self.mean_x, self.std_x, self.mean_y, self.std_y)
         return render_strokes(deltas_denorm, title=f"'{text}' (T={temperature})")
 
 
@@ -446,6 +452,7 @@ def generate_handwriting(
 # ---------------------------------------------------------------------------
 # CLI entry point
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluate MDN-RNN handwriting models")
@@ -487,13 +494,24 @@ def main() -> None:
 
         if conditioned:
             loader = build_conditioned_dataloader(
-                val_xml, vocab=vocab, batch_size=args.batch_size, shuffle=False,
-                mean_x=mean_x, std_x=std_x, mean_y=mean_y, std_y=std_y,
+                val_xml,
+                vocab=vocab,
+                batch_size=args.batch_size,
+                shuffle=False,
+                mean_x=mean_x,
+                std_x=std_x,
+                mean_y=mean_y,
+                std_y=std_y,
             )
         else:
             loader = build_dataloader(
-                val_xml, batch_size=args.batch_size, shuffle=False,
-                mean_x=mean_x, std_x=std_x, mean_y=mean_y, std_y=std_y,
+                val_xml,
+                batch_size=args.batch_size,
+                shuffle=False,
+                mean_x=mean_x,
+                std_x=std_x,
+                mean_y=mean_y,
+                std_y=std_y,
             )
 
         nll = compute_val_nll(model, loader, device, conditioned=conditioned)
@@ -532,9 +550,7 @@ def main() -> None:
         demo_dir.mkdir(exist_ok=True)
 
         for text in args.comparison_texts:
-            fig = gen.generate_handwriting(
-                text, temperature=args.temperature, top_k=args.top_k, top_p=args.top_p
-            )
+            fig = gen.generate_handwriting(text, temperature=args.temperature, top_k=args.top_k, top_p=args.top_p)
             safe_text = text.replace(" ", "_").replace("/", "_")[:50]
             fig_path = demo_dir / f"demo_{safe_text}.png"
             fig.savefig(fig_path, dpi=150)

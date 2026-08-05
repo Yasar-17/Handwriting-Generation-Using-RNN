@@ -46,7 +46,7 @@ class TestSplitSegments:
 
 class TestBuildDrawFrames:
     def test_returns_lines_and_reveals(self, sample_deltas):
-        fig, lines, segments, ends, reveals = build_draw_frames(sample_deltas, step=1)
+        _fig, lines, _segments, ends, reveals = build_draw_frames(sample_deltas, step=1)
         assert len(lines) == 3
         assert ends[-1] == 40
         assert reveals[0] == 0
@@ -57,7 +57,7 @@ class TestBuildDrawFrames:
             build_draw_frames(empty_deltas)
 
     def test_revealed_frames_count(self, sample_deltas):
-        fig, lines, segments, ends, reveals = build_draw_frames(sample_deltas, step=5)
+        _fig, lines, segments, ends, reveals = build_draw_frames(sample_deltas, step=5)
         frames = list(_revealed_frames(lines, segments, ends, reveals))
         assert len(frames) == len(reveals)
 
@@ -71,23 +71,18 @@ class TestRenderGif:
 
     def test_gif_with_title_and_theme(self, sample_deltas):
         with tempfile.TemporaryDirectory() as tmpdir:
-            path = render_handwriting_gif(
-                sample_deltas, Path(tmpdir) / "t.gif", title="Demo", theme="neon"
-            )
+            path = render_handwriting_gif(sample_deltas, Path(tmpdir) / "t.gif", title="Demo", theme="neon")
             assert path.exists()
             assert path.stat().st_size > 0
 
     def test_empty_raises(self, empty_deltas):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with pytest.raises(ValueError):
-                render_handwriting_gif(empty_deltas, Path(tmpdir) / "out.gif")
+        with tempfile.TemporaryDirectory() as tmpdir, pytest.raises(ValueError):
+            render_handwriting_gif(empty_deltas, Path(tmpdir) / "out.gif")
 
 
 class TestRenderMultiGif:
     def test_multiple_gifs(self, sample_deltas):
         with tempfile.TemporaryDirectory() as tmpdir:
-            paths = render_multi_sample_gif(
-                [sample_deltas, sample_deltas * 0.5], Path(tmpdir), stem="s"
-            )
+            paths = render_multi_sample_gif([sample_deltas, sample_deltas * 0.5], Path(tmpdir), stem="s")
             assert len(paths) == 2
             assert all(p.read_bytes()[:6] == b"GIF89a" for p in paths)

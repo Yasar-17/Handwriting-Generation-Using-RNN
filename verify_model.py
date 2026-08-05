@@ -6,8 +6,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 import torch
+
+from losses import MDNLoss, adversarial_loss, mdn_mixture_mean
 from models import MDNRNN, SequenceDiscriminator
-from losses import MDNLoss, mdn_mixture_mean, adversarial_loss
 
 
 def main():
@@ -35,9 +36,9 @@ def main():
     assert params["mu_x"].shape == (B, T, M)
     assert params["sigma_x"].min() > 0
     assert params["sigma_y"].min() > 0
-    assert (-1 <= params["rho"]).all() and (params["rho"] <= 1).all()
+    assert (params["rho"] >= -1).all() and (params["rho"] <= 1).all()
     assert torch.allclose(params["pi"].sum(-1), torch.ones(B, T), atol=1e-5)
-    assert (0 <= params["pen_up"]).all() and (params["pen_up"] <= 1).all()
+    assert (params["pen_up"] >= 0).all() and (params["pen_up"] <= 1).all()
 
     loss = loss_fn(params, target, mask)
     print(f"\n  MDN Loss: {loss.item():.4f}")
@@ -59,8 +60,8 @@ def main():
     print(f"  disc_fake shape: {disc_fake.shape}, range: [{disc_fake.min():.4f}, {disc_fake.max():.4f}]")
     assert disc_real.shape == (B,)
     assert disc_fake.shape == (B,)
-    assert (0 <= disc_real).all() and (disc_real <= 1).all()
-    assert (0 <= disc_fake).all() and (disc_fake <= 1).all()
+    assert (disc_real >= 0).all() and (disc_real <= 1).all()
+    assert (disc_fake >= 0).all() and (disc_fake <= 1).all()
 
     disc_loss, gen_adv_loss = adversarial_loss(disc_real, disc_fake, mask[:, 0])
     print(f"  Discriminator loss: {disc_loss.item():.4f}")

@@ -138,6 +138,7 @@ def test_summarize_sample_set_empty():
 
 def test_compare_sample_sets():
     rng = np.random.default_rng(1)
+
     def make(seed_variant, scale):
         pts = np.zeros((20, 3), dtype=np.float32)
         pts[:, 0] = rng.normal(scale=scale, size=20)

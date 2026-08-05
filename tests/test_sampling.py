@@ -33,9 +33,7 @@ class TestTopKFilter:
         out = top_k_filter(probs, 4)
         kept = probs[out > 0]
         # The kept components are exactly the 4 largest of the original.
-        np.testing.assert_allclose(
-            np.sort(kept)[::-1], np.sort(probs)[-4:][::-1], rtol=1e-6
-        )
+        np.testing.assert_allclose(np.sort(kept)[::-1], np.sort(probs)[-4:][::-1], rtol=1e-6)
 
 
 class TestTopPFilter:

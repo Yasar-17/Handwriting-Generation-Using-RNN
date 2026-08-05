@@ -124,7 +124,9 @@ class RandomTimeWarp(StrokeAugmentation):
         out = deltas[indices_int].copy()
         if new_len > 1:
             next_idx = np.minimum(indices_int + 1, original_len - 1)
-            out[:, :2] = (1 - indices_frac[:, None]) * deltas[indices_int, :2] + indices_frac[:, None] * deltas[next_idx, :2]
+            out[:, :2] = (1 - indices_frac[:, None]) * deltas[indices_int, :2] + indices_frac[:, None] * deltas[
+                next_idx, :2
+            ]
 
         out[:, 2] = np.where(out[:, 2] > 0.5, 1.0, 0.0)
         return out
@@ -191,11 +193,13 @@ def get_default_augmentation() -> Compose:
 
     Includes mild scaling, rotation, and noise to simulate natural variation.
     """
-    return Compose([
-        RandomApply(RandomScale((0.9, 1.1)), p=0.5),
-        RandomApply(RandomRotation(max_angle=10.0), p=0.5),
-        RandomApply(GaussianNoise(std=0.03), p=0.5),
-    ])
+    return Compose(
+        [
+            RandomApply(RandomScale((0.9, 1.1)), p=0.5),
+            RandomApply(RandomRotation(max_angle=10.0), p=0.5),
+            RandomApply(GaussianNoise(std=0.03), p=0.5),
+        ]
+    )
 
 
 def get_strong_augmentation() -> Compose:
@@ -203,13 +207,15 @@ def get_strong_augmentation() -> Compose:
 
     Includes more aggressive transforms including time warping and dropout.
     """
-    return Compose([
-        RandomApply(RandomScale((0.7, 1.3)), p=0.7),
-        RandomApply(RandomRotation(max_angle=20.0), p=0.7),
-        RandomApply(GaussianNoise(std=0.08), p=0.7),
-        RandomApply(RandomTimeWarp((0.7, 1.3)), p=0.3),
-        RandomApply(StrokeDropout(dropout_prob=0.05), p=0.3),
-    ])
+    return Compose(
+        [
+            RandomApply(RandomScale((0.7, 1.3)), p=0.7),
+            RandomApply(RandomRotation(max_angle=20.0), p=0.7),
+            RandomApply(GaussianNoise(std=0.08), p=0.7),
+            RandomApply(RandomTimeWarp((0.7, 1.3)), p=0.3),
+            RandomApply(StrokeDropout(dropout_prob=0.05), p=0.3),
+        ]
+    )
 
 
 class AugmentedStrokeDataset:
@@ -257,7 +263,7 @@ def augment_batch(
         Augmented data tensor of same shape.
     """
     aug = augmentation or get_default_augmentation()
-    B, T, _ = data.shape
+    B, _T, _ = data.shape
     augmented = data.clone()
 
     for b in range(B):

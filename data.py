@@ -9,30 +9,23 @@ Also supports text-conditioned training with character-level encoding and
 windowed attention over the conditioning text.
 """
 
-import math
-import os
-import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Optional
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, Dataset
 
-
 # ---------------------------------------------------------------------------
 # Character vocabulary
 # ---------------------------------------------------------------------------
 
 # Default character set: printable ASCII + space
-DEFAULT_CHARSET = (
-    " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`"
-    "abcdefghijklmnopqrstuvwxyz{|}~"
-)
+DEFAULT_CHARSET = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
 
 
 class CharVocab:
@@ -58,6 +51,7 @@ class CharVocab:
 # ---------------------------------------------------------------------------
 # XML Parsing
 # ---------------------------------------------------------------------------
+
 
 def parse_iam_xml(xml_path: str | Path) -> tuple[np.ndarray, str]:
     """Parse an IAM online handwriting XML file.
@@ -134,6 +128,7 @@ def relative_to_absolute(deltas: np.ndarray, start_x: float = 0.0, start_y: floa
 # Normalization
 # ---------------------------------------------------------------------------
 
+
 def compute_dataset_stats(
     xml_paths: list[str | Path],
 ) -> tuple[float, float, float, float]:
@@ -195,6 +190,7 @@ def denormalize_deltas(
 # Rendering
 # ---------------------------------------------------------------------------
 
+
 def render_strokes(
     deltas: np.ndarray,
     title: str = "",
@@ -234,6 +230,7 @@ def render_strokes(
 # ---------------------------------------------------------------------------
 # Dataset / DataLoader
 # ---------------------------------------------------------------------------
+
 
 class IAMStrokeDataset(Dataset):
     """PyTorch Dataset that loads IAM XML files and returns normalized delta sequences."""
@@ -461,7 +458,8 @@ def build_conditioned_dataloader(
 # High-level helpers
 # ---------------------------------------------------------------------------
 
-def collect_xml_files(root_dir: str | Path, split_file: Optional[str | Path] = None) -> list[Path]:
+
+def collect_xml_files(root_dir: str | Path, split_file: str | Path | None = None) -> list[Path]:
     """Recursively collect .xml files under root_dir.
 
     If split_file is provided, only include files listed in it (one filename per line).

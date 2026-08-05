@@ -213,9 +213,7 @@ def compare_sample_sets(
     fake_summary = summarize_sample_set(fake_list)
 
     results: dict[str, dict[str, float]] = {}
-    metric_keys = {
-        key for key in fake_summary if key != "num_samples" and key in real_summary
-    }
+    metric_keys = {key for key in fake_summary if key != "num_samples" and key in real_summary}
     for key in sorted(metric_keys):
         real_mean = real_summary[key]["mean"]
         fake_mean = fake_summary[key]["mean"]

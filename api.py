@@ -17,13 +17,14 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from data import CharVocab, denormalize_deltas, render_strokes
@@ -73,14 +74,22 @@ def _load_resources():
     if conditioned:
         _vocab = CharVocab()
         _model = MDNRNNConditioned(
-            input_dim=3, hidden_dim=hidden_dim, num_layers=num_layers,
-            num_mixtures=num_mixtures, num_windows=10,
-            char_vocab_size=len(_vocab), char_embed_dim=32, dropout=0.0,
+            input_dim=3,
+            hidden_dim=hidden_dim,
+            num_layers=num_layers,
+            num_mixtures=num_mixtures,
+            num_windows=10,
+            char_vocab_size=len(_vocab),
+            char_embed_dim=32,
+            dropout=0.0,
         )
     else:
         _model = MDNRNN(
-            input_dim=3, hidden_dim=hidden_dim, num_layers=num_layers,
-            num_mixtures=num_mixtures, dropout=0.0,
+            input_dim=3,
+            hidden_dim=hidden_dim,
+            num_layers=num_layers,
+            num_mixtures=num_mixtures,
+            dropout=0.0,
         )
 
     _model.load_state_dict(model_state)
@@ -242,6 +251,7 @@ async def generate(req: GenerateRequest):
     elapsed = (time.time() - start) * 1000
 
     from PIL import Image
+
     img = Image.open(io.BytesIO(img_bytes))
     w, h = img.size
 

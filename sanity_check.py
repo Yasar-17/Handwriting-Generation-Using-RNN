@@ -9,7 +9,6 @@ then exercises the full pipeline: parse -> normalize -> render -> denormalize ->
 """
 
 import argparse
-import os
 import sys
 import urllib.request
 from pathlib import Path
@@ -21,7 +20,6 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).parent))
 
 from data import (
-    IAMStrokeDataset,
     absolute_to_relative,
     build_dataloader,
     collect_xml_files,
@@ -29,10 +27,8 @@ from data import (
     denormalize_deltas,
     normalize_deltas,
     parse_iam_xml,
-    relative_to_absolute,
     render_strokes,
 )
-
 
 # ---------------------------------------------------------------------------
 # Minimal sample XML for offline testing (no download required)
@@ -171,7 +167,7 @@ def main() -> None:
 
     for batch_idx, batch in enumerate(dl):
         data = batch["data"]
-        mask = batch["mask"]
+        batch["mask"]
         lengths = batch["lengths"]
         print(f"  Batch {batch_idx}: data shape={data.shape}, lengths={lengths.tolist()}")
 

@@ -47,6 +47,7 @@ logger = logging.getLogger(__name__)
 # Autoregressive sampling (unconditional)
 # ---------------------------------------------------------------------------
 
+
 @torch.no_grad()
 def sample_unconditional(
     model: MDNRNN,
@@ -85,7 +86,7 @@ def sample_unconditional(
         z1 = np.random.randn()
         z2 = np.random.randn()
         dx = mx + sx * z1
-        dy = my + sy * (r * z1 + np.sqrt(max(1 - r ** 2, 0)) * z2)
+        dy = my + sy * (r * z1 + np.sqrt(max(1 - r**2, 0)) * z2)
 
         pen_up = 1.0 if np.random.rand() < pen_prob else 0.0
 
@@ -102,6 +103,7 @@ def sample_unconditional(
 # ---------------------------------------------------------------------------
 # Autoregressive sampling (conditioned)
 # ---------------------------------------------------------------------------
+
 
 @torch.no_grad()
 def sample_conditioned(
@@ -153,7 +155,7 @@ def sample_conditioned(
         z1 = np.random.randn()
         z2 = np.random.randn()
         dx = mx + sx * z1
-        dy = my + sy * (r * z1 + np.sqrt(max(1 - r ** 2, 0)) * z2)
+        dy = my + sy * (r * z1 + np.sqrt(max(1 - r**2, 0)) * z2)
 
         pen_up = 1.0 if np.random.rand() < pen_prob else 0.0
 
@@ -179,6 +181,7 @@ def sample_conditioned(
 # ---------------------------------------------------------------------------
 # Training / evaluation (unconditional)
 # ---------------------------------------------------------------------------
+
 
 def train_one_epoch_uncond(
     model: MDNRNN,
@@ -217,9 +220,7 @@ def train_one_epoch_uncond(
             loss = mdn
 
             if discriminator is not None:
-                fake_seq = mdn_mixture_mean(
-                    params["mu_x"], params["mu_y"], params["pi"], params["pen_up"]
-                )
+                fake_seq = mdn_mixture_mean(params["mu_x"], params["mu_y"], params["pi"], params["pen_up"])
                 disc_fake = discriminator(fake_seq)
                 disc_real = discriminator(data).detach()
 
@@ -319,9 +320,7 @@ def evaluate_uncond(
             mdn = loss_fn(params, data, mask)
 
             if discriminator is not None:
-                fake_seq = mdn_mixture_mean(
-                    params["mu_x"], params["mu_y"], params["pi"], params["pen_up"]
-                )
+                fake_seq = mdn_mixture_mean(params["mu_x"], params["mu_y"], params["pi"], params["pen_up"])
                 disc_fake = discriminator(fake_seq)
                 disc_real = discriminator(data)
 
@@ -347,6 +346,7 @@ def evaluate_uncond(
 # ---------------------------------------------------------------------------
 # Training / evaluation (conditioned)
 # ---------------------------------------------------------------------------
+
 
 def train_one_epoch_cond(
     model: MDNRNNConditioned,
@@ -387,9 +387,7 @@ def train_one_epoch_cond(
             loss = mdn
 
             if discriminator is not None:
-                fake_seq = mdn_mixture_mean(
-                    params["mu_x"], params["mu_y"], params["pi"], params["pen_up"]
-                )
+                fake_seq = mdn_mixture_mean(params["mu_x"], params["mu_y"], params["pi"], params["pen_up"])
                 disc_fake = discriminator(fake_seq)
                 disc_real = discriminator(data).detach()
 
@@ -491,9 +489,7 @@ def evaluate_cond(
             mdn = loss_fn(params, data, mask)
 
             if discriminator is not None:
-                fake_seq = mdn_mixture_mean(
-                    params["mu_x"], params["mu_y"], params["pi"], params["pen_up"]
-                )
+                fake_seq = mdn_mixture_mean(params["mu_x"], params["mu_y"], params["pi"], params["pen_up"])
                 disc_fake = discriminator(fake_seq)
                 disc_real = discriminator(data)
 
@@ -519,6 +515,7 @@ def evaluate_cond(
 # ---------------------------------------------------------------------------
 # Plot training loss
 # ---------------------------------------------------------------------------
+
 
 def plot_training_loss(log: list[dict], output_dir: Path) -> None:
     """Generate training loss plots from the log."""
@@ -614,6 +611,7 @@ def log_metrics_to_tensorboard(
 # Main
 # ---------------------------------------------------------------------------
 
+
 def load_yaml_config(config_path: str | Path) -> dict:
     """Load a YAML config file into a nested dictionary.
 
@@ -623,9 +621,7 @@ def load_yaml_config(config_path: str | Path) -> dict:
     try:
         import yaml
     except ImportError as exc:
-        raise SystemExit(
-            "PyYAML is required for --config. Install it with: pip install pyyaml"
-        ) from exc
+        raise SystemExit("PyYAML is required for --config. Install it with: pip install pyyaml") from exc
 
     path = Path(config_path)
     with path.open("r", encoding="utf-8") as f:
@@ -671,7 +667,9 @@ def main() -> None:
     parser.add_argument("--num_workers", type=int, default=0, help="Dataloader worker processes")
     parser.add_argument("--output_dir", type=str, default="./output", help="Checkpoint and sample output dir")
     parser.add_argument("--conditioned", action="store_true", help="Enable text-conditioned training")
-    parser.add_argument("--condition_text", type=str, default="the quick brown fox", help="Text to generate during sampling")
+    parser.add_argument(
+        "--condition_text", type=str, default="the quick brown fox", help="Text to generate during sampling"
+    )
     parser.add_argument("--hidden_dim", type=int, default=256)
     parser.add_argument("--num_layers", type=int, default=3)
     parser.add_argument("--num_mixtures", type=int, default=20)
@@ -685,30 +683,48 @@ def main() -> None:
     parser.add_argument("--sample_every", type=int, default=5, help="Generate sample every N epochs")
     parser.add_argument("--sample_len", type=int, default=800, help="Timesteps per generated sample")
     parser.add_argument("--temperature", type=float, default=0.5, help="Sampling temperature")
-    parser.add_argument("--top_k", type=int, default=0, help="Top-k sampling: keep only the k most probable mixture components (0 = disabled)")
-    parser.add_argument("--top_p", type=float, default=1.0, help="Top-p (nucleus) sampling: keep components up to cumulative probability p (1.0 = disabled)")
+    parser.add_argument(
+        "--top_k",
+        type=int,
+        default=0,
+        help="Top-k sampling: keep only the k most probable mixture components (0 = disabled)",
+    )
+    parser.add_argument(
+        "--top_p",
+        type=float,
+        default=1.0,
+        help="Top-p (nucleus) sampling: keep components up to cumulative probability p (1.0 = disabled)",
+    )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--resume", type=str, default=None, help="Path to checkpoint to resume from")
-    parser.add_argument("--use_gan", action="store_true", help="Enable adversarial training with sequence discriminator")
+    parser.add_argument(
+        "--use_gan", action="store_true", help="Enable adversarial training with sequence discriminator"
+    )
     parser.add_argument("--disc_hidden_dim", type=int, default=128, help="Discriminator hidden dimension")
     parser.add_argument("--disc_num_layers", type=int, default=4, help="Number of Conv1D layers in discriminator")
     parser.add_argument("--disc_dropout", type=float, default=0.2, help="Discriminator dropout rate")
-    parser.add_argument("--adv_weight", type=float, default=0.1, help="Weight for adversarial loss combined with MDN NLL")
     parser.add_argument(
-        "--grad_penalty_weight", type=float, default=0.0,
+        "--adv_weight", type=float, default=0.1, help="Weight for adversarial loss combined with MDN NLL"
+    )
+    parser.add_argument(
+        "--grad_penalty_weight",
+        type=float,
+        default=0.0,
         help="WGAN-GP gradient penalty weight for the discriminator "
-             "(0 = disabled; a value around 10.0 is typical). Penalizing the "
-             "discriminator's gradient norm keeps it Lipschitz-smooth and "
-             "stabilizes adversarial training.",
+        "(0 = disabled; a value around 10.0 is typical). Penalizing the "
+        "discriminator's gradient norm keeps it Lipschitz-smooth and "
+        "stabilizes adversarial training.",
     )
     parser.add_argument("--disc_lr", type=float, default=1e-4, help="Discriminator learning rate")
     parser.add_argument(
-        "--chunk_size", type=int, default=1,
+        "--chunk_size",
+        type=int,
+        default=1,
         help="Conditioned training speedup: number of timesteps per chunked "
-             "LSTM call. 1 = exact per-step recurrence (Graves 2013). "
-             "Larger values (e.g. 16) trade a small amount of attention "
-             "granularity for a large reduction in LSTM launch overhead. "
-             "Sampling always uses chunk_size=1 for fidelity.",
+        "LSTM call. 1 = exact per-step recurrence (Graves 2013). "
+        "Larger values (e.g. 16) trade a small amount of attention "
+        "granularity for a large reduction in LSTM launch overhead. "
+        "Sampling always uses chunk_size=1 for fidelity.",
     )
     parser.add_argument("--grad_accum_steps", type=int, default=1, help="Number of steps to accumulate gradients")
     parser.add_argument("--use_amp", action="store_true", help="Enable automatic mixed precision training")
@@ -716,10 +732,11 @@ def main() -> None:
     parser.add_argument("--use_cosine_annealing", action="store_true", help="Use cosine annealing LR scheduler")
     parser.add_argument("--early_stopping_patience", type=int, default=0, help="Early stopping patience (0 = disabled)")
     parser.add_argument(
-        "--use_ema", action="store_true",
+        "--use_ema",
+        action="store_true",
         help="Maintain an exponential moving average of the generator weights "
-             "and use the smoothed weights for sampling (higher-quality, "
-             "more stable samples; standard for GAN training).",
+        "and use the smoothed weights for sampling (higher-quality, "
+        "more stable samples; standard for GAN training).",
     )
     parser.add_argument("--ema_decay", type=float, default=0.999, help="EMA decay factor (larger = slower adaptation)")
 
@@ -768,33 +785,62 @@ def main() -> None:
     logger.info("Stats: mean_x=%.4f, std_x=%.4f, mean_y=%.4f, std_y=%.4f", mean_x, std_x, mean_y, std_y)
 
     stats_path = output_dir / "stats.json"
-    stats_path.write_text(json.dumps({
-        "mean_x": mean_x, "std_x": std_x,
-        "mean_y": mean_y, "std_y": std_y,
-    }, indent=2))
+    stats_path.write_text(
+        json.dumps(
+            {
+                "mean_x": mean_x,
+                "std_x": std_x,
+                "mean_y": mean_y,
+                "std_y": std_y,
+            },
+            indent=2,
+        )
+    )
 
     vocab = CharVocab()
 
     if args.conditioned:
         train_loader = build_conditioned_dataloader(
-            train_xml, vocab=vocab, batch_size=args.batch_size, shuffle=True,
-            mean_x=mean_x, std_x=std_x, mean_y=mean_y, std_y=std_y,
+            train_xml,
+            vocab=vocab,
+            batch_size=args.batch_size,
+            shuffle=True,
+            mean_x=mean_x,
+            std_x=std_x,
+            mean_y=mean_y,
+            std_y=std_y,
             num_workers=args.num_workers,
         )
         val_loader = build_conditioned_dataloader(
-            val_xml, vocab=vocab, batch_size=args.batch_size, shuffle=False,
-            mean_x=mean_x, std_x=std_x, mean_y=mean_y, std_y=std_y,
+            val_xml,
+            vocab=vocab,
+            batch_size=args.batch_size,
+            shuffle=False,
+            mean_x=mean_x,
+            std_x=std_x,
+            mean_y=mean_y,
+            std_y=std_y,
             num_workers=args.num_workers,
         )
     else:
         train_loader = build_dataloader(
-            train_xml, batch_size=args.batch_size, shuffle=True,
-            mean_x=mean_x, std_x=std_x, mean_y=mean_y, std_y=std_y,
+            train_xml,
+            batch_size=args.batch_size,
+            shuffle=True,
+            mean_x=mean_x,
+            std_x=std_x,
+            mean_y=mean_y,
+            std_y=std_y,
             num_workers=args.num_workers,
         )
         val_loader = build_dataloader(
-            val_xml, batch_size=args.batch_size, shuffle=False,
-            mean_x=mean_x, std_x=std_x, mean_y=mean_y, std_y=std_y,
+            val_xml,
+            batch_size=args.batch_size,
+            shuffle=False,
+            mean_x=mean_x,
+            std_x=std_x,
+            mean_y=mean_y,
+            std_y=std_y,
             num_workers=args.num_workers,
         )
 
@@ -823,14 +869,10 @@ def main() -> None:
         ).to(device)
 
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode="min", factor=0.5, patience=5
-    )
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.5, patience=5)
     cosine_scheduler = None
     if args.use_cosine_annealing:
-        cosine_scheduler = optim.lr_scheduler.CosineAnnealingLR(
-            optimizer, T_max=args.epochs, eta_min=1e-6
-        )
+        cosine_scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs, eta_min=1e-6)
     loss_fn = MDNLoss()
 
     discriminator = None
@@ -881,7 +923,11 @@ def main() -> None:
     if args.use_amp:
         logger.info("  Mixed precision (AMP) enabled")
     if args.grad_accum_steps > 1:
-        logger.info("  Gradient accumulation: %d steps (effective batch size: %d)", args.grad_accum_steps, args.batch_size * args.grad_accum_steps)
+        logger.info(
+            "  Gradient accumulation: %d steps (effective batch size: %d)",
+            args.grad_accum_steps,
+            args.batch_size * args.grad_accum_steps,
+        )
     if args.warmup_epochs > 0:
         logger.info("  LR warmup: %d epochs", args.warmup_epochs)
     if args.use_cosine_annealing:
@@ -896,8 +942,15 @@ def main() -> None:
     for epoch in range(start_epoch, args.epochs):
         if args.conditioned:
             train_metrics = train_one_epoch_cond(
-                model, train_loader, loss_fn, discriminator,
-                optimizer, disc_optimizer, device, args.clip_grad, args.adv_weight,
+                model,
+                train_loader,
+                loss_fn,
+                discriminator,
+                optimizer,
+                disc_optimizer,
+                device,
+                args.clip_grad,
+                args.adv_weight,
                 grad_penalty_weight=args.grad_penalty_weight,
                 grad_accum_steps=args.grad_accum_steps,
                 use_amp=args.use_amp,
@@ -908,8 +961,15 @@ def main() -> None:
             val_metrics = evaluate_cond(model, val_loader, loss_fn, discriminator, device, use_amp=args.use_amp)
         else:
             train_metrics = train_one_epoch_uncond(
-                model, train_loader, loss_fn, discriminator,
-                optimizer, disc_optimizer, device, args.clip_grad, args.adv_weight,
+                model,
+                train_loader,
+                loss_fn,
+                discriminator,
+                optimizer,
+                disc_optimizer,
+                device,
+                args.clip_grad,
+                args.adv_weight,
                 grad_penalty_weight=args.grad_penalty_weight,
                 grad_accum_steps=args.grad_accum_steps,
                 use_amp=args.use_amp,
@@ -947,14 +1007,23 @@ def main() -> None:
                 "val_mdn=%.4f val_adv=%.4f val_disc=%.4f val_total=%.4f | "
                 "lr=%.6f",
                 epoch,
-                train_metrics["mdn_loss"], train_metrics["adv_loss"], train_metrics["disc_loss"], train_total,
-                val_metrics["mdn_loss"], val_metrics["adv_loss"], val_metrics["disc_loss"], val_total,
+                train_metrics["mdn_loss"],
+                train_metrics["adv_loss"],
+                train_metrics["disc_loss"],
+                train_total,
+                val_metrics["mdn_loss"],
+                val_metrics["adv_loss"],
+                val_metrics["disc_loss"],
+                val_total,
                 lr,
             )
         else:
             logger.info(
                 "Epoch %3d | train_loss=%.4f | val_loss=%.4f | lr=%.6f",
-                epoch, train_metrics["mdn_loss"], val_metrics["mdn_loss"], lr,
+                epoch,
+                train_metrics["mdn_loss"],
+                val_metrics["mdn_loss"],
+                lr,
             )
 
         log_entry = {
@@ -982,7 +1051,9 @@ def main() -> None:
             if args.conditioned:
                 text = args.condition_text
                 deltas = sample_conditioned(
-                    sample_model, text, vocab,
+                    sample_model,
+                    text,
+                    vocab,
                     temperature=args.temperature,
                     top_k=args.top_k,
                     top_p=args.top_p,
