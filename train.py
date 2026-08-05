@@ -35,6 +35,7 @@ from data import (
     prepare_splits,
     render_strokes,
 )
+from ema import ModelEMA
 from losses import MDNLoss, adversarial_loss, gradient_penalty, mdn_mixture_mean
 from models import MDNRNN, MDNRNNConditioned, SequenceDiscriminator
 
@@ -197,6 +198,7 @@ def train_one_epoch_uncond(
     use_amp: bool = False,
     scaler: GradScaler | None = None,
     disc_scaler: GradScaler | None = None,
+    ema: ModelEMA | None = None,
 ) -> dict[str, float]:
     model.train()
     if discriminator is not None:
@@ -259,6 +261,9 @@ def train_one_epoch_uncond(
             else:
                 optimizer.step()
             optimizer.zero_grad()
+
+            if ema is not None:
+                ema.update(model)
 
         if discriminator is not None:
             disc_loss = disc_loss / grad_accum_steps
@@ -361,6 +366,7 @@ def train_one_epoch_cond(
     use_amp: bool = False,
     scaler: GradScaler | None = None,
     disc_scaler: GradScaler | None = None,
+    ema: ModelEMA | None = None,
 ) -> dict[str, float]:
     model.train()
     if discriminator is not None:
@@ -425,6 +431,9 @@ def train_one_epoch_cond(
             else:
                 optimizer.step()
             optimizer.zero_grad()
+
+            if ema is not None:
+                ema.update(model)
 
         if discriminator is not None:
             disc_loss = disc_loss / grad_accum_steps
@@ -707,6 +716,13 @@ def main() -> None:
     parser.add_argument("--warmup_epochs", type=int, default=5, help="Number of warmup epochs for LR scheduler")
     parser.add_argument("--use_cosine_annealing", action="store_true", help="Use cosine annealing LR scheduler")
     parser.add_argument("--early_stopping_patience", type=int, default=0, help="Early stopping patience (0 = disabled)")
+    parser.add_argument(
+        "--use_ema", action="store_true",
+        help="Maintain an exponential moving average of the generator weights "
+             "and use the smoothed weights for sampling (higher-quality, "
+             "more stable samples; standard for GAN training).",
+    )
+    parser.add_argument("--ema_decay", type=float, default=0.999, help="EMA decay factor (larger = slower adaptation)")
 
     # A first parse only discovers --config so a config file can set defaults
     # before the final parse. Command-line flags always take precedence.
@@ -835,6 +851,11 @@ def main() -> None:
     scaler = GradScaler(enabled=args.use_amp)
     disc_scaler = GradScaler(enabled=args.use_amp) if args.use_gan else None
 
+    ema = None
+    if args.use_ema:
+        ema = ModelEMA(model, decay=args.ema_decay, device=device)
+        logger.info("EMA of generator weights enabled | decay=%.4f", args.ema_decay)
+
     start_epoch = 0
     log = []
 
@@ -849,6 +870,8 @@ def main() -> None:
         if args.use_gan and "discriminator" in ckpt:
             discriminator.load_state_dict(ckpt["discriminator"])
             disc_optimizer.load_state_dict(ckpt["disc_optimizer"])
+        if ema is not None and "ema" in ckpt:
+            ema.load_state_dict(ckpt["ema"])
         start_epoch = ckpt["epoch"] + 1
         log = ckpt.get("log", [])
 
@@ -881,6 +904,7 @@ def main() -> None:
                 use_amp=args.use_amp,
                 scaler=scaler,
                 disc_scaler=disc_scaler,
+                ema=ema,
             )
             val_metrics = evaluate_cond(model, val_loader, loss_fn, discriminator, device, use_amp=args.use_amp)
         else:
@@ -892,6 +916,7 @@ def main() -> None:
                 use_amp=args.use_amp,
                 scaler=scaler,
                 disc_scaler=disc_scaler,
+                ema=ema,
             )
             val_metrics = evaluate_uncond(model, val_loader, loss_fn, discriminator, device, use_amp=args.use_amp)
 
@@ -950,14 +975,15 @@ def main() -> None:
         log.append(log_entry)
         (output_dir / "log.json").write_text(json.dumps(log, indent=2))
 
-        # Generate sample
+        # Generate sample (from EMA weights when enabled, for smoother samples)
         if (epoch + 1) % args.sample_every == 0 or epoch == start_epoch:
             logger.info("  Generating sample at epoch %d...", epoch)
+            sample_model = ema.ema_model() if ema is not None else model
 
             if args.conditioned:
                 text = args.condition_text
                 deltas = sample_conditioned(
-                    model, text, vocab,
+                    sample_model, text, vocab,
                     temperature=args.temperature,
                     max_seq_len=args.sample_len,
                     device=device,
@@ -965,7 +991,7 @@ def main() -> None:
                 title = f"Epoch {epoch} | '{text}' (T={args.temperature})"
             else:
                 deltas = sample_unconditional(
-                    model,
+                    sample_model,
                     seq_len=args.sample_len,
                     temperature=args.temperature,
                     device=device,
@@ -1005,9 +1031,17 @@ def main() -> None:
             ckpt["disc_optimizer"] = disc_optimizer.state_dict()
             ckpt["adv_weight"] = args.adv_weight
             ckpt["grad_penalty_weight"] = args.grad_penalty_weight
+        if ema is not None:
+            ckpt["ema"] = ema.state_dict()
+            ckpt["ema_decay"] = args.ema_decay
         torch.save(ckpt, ckpt_dir / f"checkpoint_epoch_{epoch:04d}.pt")
         if is_best:
             torch.save(ckpt, ckpt_dir / "checkpoint_best.pt")
+            if ema is not None:
+                # Drop-in EMA checkpoint: eval/inference can load it directly.
+                ema_ckpt = dict(ckpt)
+                ema_ckpt["model"] = ema.state_dict()
+                torch.save(ema_ckpt, ckpt_dir / "checkpoint_best_ema.pt")
 
         # Generate training loss plots
         plot_training_loss(log, output_dir)
