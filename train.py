@@ -12,7 +12,6 @@ renders them, and saves checkpoints.
 import argparse
 import json
 import logging
-import os
 import sys
 from pathlib import Path
 
@@ -29,17 +28,14 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from data import (
     CharVocab,
-    IAMStrokeDataset,
-    IAMConditionedDataset,
-    build_dataloader,
     build_conditioned_dataloader,
-    collect_xml_files,
+    build_dataloader,
     compute_dataset_stats,
     denormalize_deltas,
     prepare_splits,
     render_strokes,
 )
-from losses import MDNLoss, mdn_mixture_mean, adversarial_loss
+from losses import MDNLoss, adversarial_loss, gradient_penalty, mdn_mixture_mean
 from models import MDNRNN, MDNRNNConditioned, SequenceDiscriminator
 
 logger = logging.getLogger(__name__)
@@ -135,7 +131,7 @@ def sample_conditioned(
     deltas = []
     consecutive_pen_up = 0
 
-    for step in range(max_seq_len):
+    for _step in range(max_seq_len):
         params, hidden, _ = model(x, char_tensor, char_mask, hidden, chunk_size=1)
 
         pi = params["pi"][0, 0]
@@ -196,6 +192,7 @@ def train_one_epoch_uncond(
     device: torch.device,
     clip_grad: float = 5.0,
     adv_weight: float = 0.1,
+    grad_penalty_weight: float = 0.0,
     grad_accum_steps: int = 1,
     use_amp: bool = False,
     scaler: GradScaler | None = None,
@@ -237,6 +234,14 @@ def train_one_epoch_uncond(
             else:
                 gen_adv = torch.tensor(0.0)
                 disc_loss = torch.tensor(0.0)
+
+        if discriminator is not None and grad_penalty_weight > 0:
+            disc_loss = disc_loss + gradient_penalty(
+                discriminator,
+                data.detach(),
+                fake_seq.detach(),
+                lambda_=grad_penalty_weight,
+            )
 
         loss = loss / grad_accum_steps
         if use_amp:
@@ -351,6 +356,7 @@ def train_one_epoch_cond(
     device: torch.device,
     clip_grad: float = 5.0,
     adv_weight: float = 0.1,
+    grad_penalty_weight: float = 0.0,
     grad_accum_steps: int = 1,
     use_amp: bool = False,
     scaler: GradScaler | None = None,
@@ -394,6 +400,14 @@ def train_one_epoch_cond(
             else:
                 gen_adv = torch.tensor(0.0)
                 disc_loss = torch.tensor(0.0)
+
+        if discriminator is not None and grad_penalty_weight > 0:
+            disc_loss = disc_loss + gradient_penalty(
+                discriminator,
+                data.detach(),
+                fake_seq.detach(),
+                lambda_=grad_penalty_weight,
+            )
 
         loss = loss / grad_accum_steps
         if use_amp:
@@ -620,6 +634,13 @@ def main() -> None:
     parser.add_argument("--disc_num_layers", type=int, default=4, help="Number of Conv1D layers in discriminator")
     parser.add_argument("--disc_dropout", type=float, default=0.2, help="Discriminator dropout rate")
     parser.add_argument("--adv_weight", type=float, default=0.1, help="Weight for adversarial loss combined with MDN NLL")
+    parser.add_argument(
+        "--grad_penalty_weight", type=float, default=0.0,
+        help="WGAN-GP gradient penalty weight for the discriminator "
+             "(0 = disabled; a value around 10.0 is typical). Penalizing the "
+             "discriminator's gradient norm keeps it Lipschitz-smooth and "
+             "stabilizes adversarial training.",
+    )
     parser.add_argument("--disc_lr", type=float, default=1e-4, help="Discriminator learning rate")
     parser.add_argument(
         "--chunk_size", type=int, default=1,
@@ -741,6 +762,8 @@ def main() -> None:
         ).to(device)
         disc_optimizer = optim.Adam(discriminator.parameters(), lr=args.disc_lr)
         logger.info("GAN training enabled | adv_weight=%.2f | disc_lr=%.2e", args.adv_weight, args.disc_lr)
+        if args.grad_penalty_weight > 0:
+            logger.info("  Gradient penalty (WGAN-GP) enabled | weight=%.2f", args.grad_penalty_weight)
 
     scaler = GradScaler(enabled=args.use_amp)
     disc_scaler = GradScaler(enabled=args.use_amp) if args.use_gan else None
@@ -786,6 +809,7 @@ def main() -> None:
             train_metrics = train_one_epoch_cond(
                 model, train_loader, loss_fn, discriminator,
                 optimizer, disc_optimizer, device, args.clip_grad, args.adv_weight,
+                grad_penalty_weight=args.grad_penalty_weight,
                 grad_accum_steps=args.grad_accum_steps,
                 use_amp=args.use_amp,
                 scaler=scaler,
@@ -796,6 +820,7 @@ def main() -> None:
             train_metrics = train_one_epoch_uncond(
                 model, train_loader, loss_fn, discriminator,
                 optimizer, disc_optimizer, device, args.clip_grad, args.adv_weight,
+                grad_penalty_weight=args.grad_penalty_weight,
                 grad_accum_steps=args.grad_accum_steps,
                 use_amp=args.use_amp,
                 scaler=scaler,
@@ -912,6 +937,7 @@ def main() -> None:
             ckpt["discriminator"] = discriminator.state_dict()
             ckpt["disc_optimizer"] = disc_optimizer.state_dict()
             ckpt["adv_weight"] = args.adv_weight
+            ckpt["grad_penalty_weight"] = args.grad_penalty_weight
         torch.save(ckpt, ckpt_dir / f"checkpoint_epoch_{epoch:04d}.pt")
         if is_best:
             torch.save(ckpt, ckpt_dir / "checkpoint_best.pt")

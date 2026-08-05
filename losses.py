@@ -106,6 +106,52 @@ def mdn_loss(
     return nll.sum() / valid.clamp(min=1.0)
 
 
+def gradient_penalty(
+    discriminator: nn.Module,
+    real: torch.Tensor,
+    fake: torch.Tensor,
+    lambda_: float = 1.0,
+) -> torch.Tensor:
+    """WGAN-GP-style gradient penalty to stabilize adversarial training.
+
+    Penalizes the discriminator when the gradient of its output with respect
+    to interpolations between real and fake sequences deviates from unit
+    norm. Enforcing a Lipschitz bound on the discriminator prevents it from
+    overpowering the generator, which commonly destabilizes GAN training.
+
+    Args:
+        discriminator: the sequence discriminator, called as
+            ``discriminator(x) -> (B,)`` probabilities.
+        real: (B, T, 3) real stroke sequences.
+        fake: (B, T, 3) generated (fake) stroke sequences.
+        lambda_: weight of the penalty term (returned scalar is already
+            multiplied by this).
+
+    Returns:
+        penalty: scalar tensor (lambda * E[(||grad||_2 - 1)^2]).
+    """
+    B = real.size(0)
+    if B == 0:
+        return torch.zeros((), device=real.device)
+
+    alpha = torch.rand(B, 1, 1, device=real.device, dtype=real.dtype)
+    interp = (alpha * real + (1.0 - alpha) * fake).requires_grad_(True)
+
+    d_interp = discriminator(interp)
+
+    grads = torch.autograd.grad(
+        outputs=d_interp,
+        inputs=interp,
+        grad_outputs=torch.ones_like(d_interp),
+        create_graph=True,
+        retain_graph=True,
+    )[0]
+
+    grad_norm = grads.reshape(B, -1).norm(2, dim=1)
+    penalty = lambda_ * ((grad_norm - 1.0) ** 2).mean()
+    return penalty
+
+
 class MDNLoss(nn.Module):
     """Module wrapper for mdn_loss so it works cleanly with target tensors."""
 

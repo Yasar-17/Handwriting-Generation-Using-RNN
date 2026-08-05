@@ -22,6 +22,8 @@ training:
   clip_grad: 5.0
   use_gan: false
   adv_weight: 0.1
+  # WGAN-GP gradient penalty for the discriminator (0 = disabled, ~10.0 typical)
+  grad_penalty_weight: 0.0
   disc_lr: 0.0001
   disc_hidden_dim: 128
   disc_num_layers: 4
