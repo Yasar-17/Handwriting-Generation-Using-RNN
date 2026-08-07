@@ -53,8 +53,6 @@ py-modules = [
     "sampling",
     "train",
     "eval",
-    "verify_model",
-    "sanity_check",
     "generate_synthetic_data",
     "inference",
     "render",

@@ -33,14 +33,9 @@ This project has been improved with production-ready features:
   generator weights for higher-quality, more stable samples.
 - **Top-k / Top-p (nucleus) sampling** (`--top_k`, `--top_p`) — modern decoding
   control for cleaner or more varied strokes.
-- **YAML config files** (`--config config.yaml`) — run reproducible training runs
-  from a single file.
 - **TensorBoard** — watch training live in your browser.
-- **Data Augmentation** — scale, rotate, add noise, warp time.
 - **Inference CLI** — generate handwriting from the terminal.
-- **GIF animation** — render the pen drawing the text.
 - **SVG export + themes** — save strokes as SVG in multiple styles.
-- **Docker + CI/CD + Makefile** — containerized, tested, one-command workflows.
 - **Test suite** — full pytest coverage.
 
 ---
@@ -78,9 +73,7 @@ The sample images below are saved in this repository (under `output/samples/` an
 - [Sampling / Inference](#sampling--inference)
 - [Evaluation](#evaluation)
 - [Results](#results)
-- [Configuration Files](#configuration-files)
-- [Docker & CI/CD](#docker--cicd)
-- [Model Export](#model-export)
+- [Training Flags Reference](#training-flags-reference)
 - [Running Tests](#running-tests)
 - [License](#license)
 - [References](#references)
@@ -134,26 +127,13 @@ Handwriting Generation using RNN + GAN/
 ├── sampling.py                   # Temperature, top-k, top-p sampling helpers
 ├── train.py                      # Training loop (both modes) + config file support
 ├── eval.py                       # NLL evaluation, comparisons, demo API
-├── inference.py                  # Production inference CLI
+├── inference.py                  # Inference CLI
 ├── generate_synthetic_data.py    # Make fake IAM-style XML data
-├── sanity_check.py               # Quick end-to-end smoke test
-├── verify_model.py               # Shape / stability checks
-├── export_model.py               # Export to TorchScript / ONNX
-├── augmentations.py              # Data augmentation transforms
 ├── render.py                     # SVG + multi-theme rendering
-├── render_animation.py           # Animated GIF rendering
-├── metrics.py                    # Stroke-quality metrics
-├── benchmark.py                  # Inference speed / memory benchmarks
-├── api.py                        # FastAPI REST server
-├── app.py                        # Gradio demo
-├── config.yaml                   # Example config file (works with --config)
 ├── requirements.txt
 ├── pyproject.toml
-├── Makefile
-├── Dockerfile
 ├── LICENSE
 ├── README.md
-├── .github/workflows/ci.yml      # CI/CD pipeline
 ├── tests/                        # pytest tests
 ├── output/                       # Unconditional run: samples, logs, stats
 └── output_conditioned/           # Conditioned run: same structure
@@ -178,24 +158,9 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Or with Docker:
-
-```bash
-docker build -t handwriting-rnn-gan .
-docker run --rm -v $(pwd)/output:/app/output handwriting-rnn-gan python train.py --help
-```
-
-Or with Make:
-
-```bash
-make install
-```
-
 To check everything is wired correctly:
 
 ```bash
-python verify_model.py
-python sanity_check.py
 pytest tests/
 ```
 
@@ -455,11 +420,8 @@ python inference.py \
     --text "hello world" "machine learning" \
     --output_dir ./generated \
     --temperature 0.5 --num_samples 3 \
-    --top_k 5 --top_p 0.95 \
-    --gif
+    --top_k 5 --top_p 0.95
 ```
-
-Add `--gif` to also save an animated drawing GIF per sample.
 
 ---
 
@@ -482,10 +444,6 @@ This produces:
    (saved to `eval_output/eval_results.json`).
 2. **Pre/post-GAN comparison images** in `eval_output/comparisons/`.
 3. **Demo samples** in `eval_output/demo/`.
-
-Quantitative stroke-quality metrics (number of strokes, pen-up ratio, smoothness,
-curvature, etc.) live in `metrics.py` and can compare two models or real vs. generated
-data.
 
 ---
 
@@ -510,17 +468,7 @@ pipeline. The negative log-likelihood decreases steadily for both models.
 
 ---
 
-## Configuration Files
-
-You can put all training settings in a YAML file and pass it with `--config`:
-
-```bash
-python train.py --config config.yaml
-```
-
-Any command-line flag overrides the matching config value. The example file at
-`config.yaml` covers data, model, training (including `grad_penalty_weight`, EMA,
-AMP, early stopping) and sampling (`top_k`, `top_p`).
+## Training Flags Reference
 
 Quick reference of the most useful flags:
 
@@ -553,37 +501,6 @@ Quick reference of the most useful flags:
 
 ---
 
-## Docker & CI/CD
-
-```bash
-make docker-build
-make docker-run
-```
-
-The GitHub Actions workflow (`.github/workflows/ci.yml`) runs on Python 3.10, 3.11 and
-3.12: linting, model verification, sanity checks, the full pytest suite, and a Docker
-build.
-
----
-
-## Model Export
-
-```bash
-# TorchScript
-python export_model.py --ckpt_path ./output_conditioned/checkpoints/checkpoint_best.pt \
-    --output_dir ./exported_model --format torchscript
-
-# ONNX
-python export_model.py --ckpt_path ./output_conditioned/checkpoints/checkpoint_best.pt \
-    --output_dir ./exported_model --stats_path ./output_conditioned/stats.json --format onnx
-
-# Both
-python export_model.py --ckpt_path ./output_conditioned/checkpoints/checkpoint_best.pt \
-    --output_dir ./exported_model --stats_path ./output_conditioned/stats.json --format both
-```
-
----
-
 ## Running Tests
 
 ```bash
@@ -592,8 +509,6 @@ pytest tests/ -v
 # With coverage
 pytest tests/ -v --cov=.
 ```
-
-Or with Make: `make test`.
 
 ---
 

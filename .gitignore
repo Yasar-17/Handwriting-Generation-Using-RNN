@@ -43,6 +43,7 @@ synthetic_data/
 output/tensorboard/
 output_conditioned/tensorboard/
 eval_output/
+sanity_output/
 
 # --- OS junk ---
 .DS_Store
