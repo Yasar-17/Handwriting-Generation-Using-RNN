@@ -5,4 +5,3 @@ tqdm>=4.65
 pyyaml>=6.0
 pytest>=7.0
 tensorboard>=2.14
-Pillow>=10.0
